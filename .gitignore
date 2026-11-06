@@ -1,0 +1,26 @@
+# Ignorar artefactos de compilación CMake
+/build/
+
+# Protección contra in-source builds (por si acaso)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CMakeDoxyfile.in
+CMakeDoxygenDefaults.cmake
+gladsources/
+libglad_gl_core_33.a
+bin/
+
+# Archivos de editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Objetos y binarios compilados
+*.o
+*.obj
+*.so
+*.a
