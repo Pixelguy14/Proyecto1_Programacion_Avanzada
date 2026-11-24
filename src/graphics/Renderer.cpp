@@ -1,53 +1,50 @@
 #include "Renderer.h"
+
 #include <glad/gl.h>
-#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+#include <cmath>
 #include <iostream>
+#include <vector>
 
 /**
  * @file Renderer.cpp
- * @brief Implementación del Renderer para el Sprint 0.
+ * @brief Implementación de las primitivas de dibujado 2D.
  *
- * Dibuja un rectángulo rojo usando coordenadas de pantalla (0–1920, 0–1080)
- * gracias a la proyección ortográfica definida por glm::ortho().
+ * Todas las figuras se dibujan a partir de dos mallas unitarias (un círculo de
+ * radio 1 y un quad de -1 a 1) transformadas con una matriz modelo. El vertex
+ * shader aplica `uProjection * uModel`; el fragment shader usa `uColor`.
  *
- * ## ¿Qué es la proyección ortográfica?
- * En OpenGL, el espacio NDC (Normalized Device Coordinates) va de -1 a 1 en
- * cada eje. Con una proyección ortográfica mapeamos un rango arbitrario de
- * coordenadas (0 a 1920 en X, 0 a 1080 en Y) a ese espacio, de modo que
- * podemos usar coordenadas de píxeles directamente en nuestro código de juego.
- *
- * La matriz resultante se pasa al vertex shader como el uniform "uProjection".
- *
- * Referencia: The Nature of Code – Cap. 1 (Vectores y sistemas de coordenadas).
+ * Referencia: The Nature of Code – Cap. 1 (sistemas de coordenadas).
  */
 
 namespace {
 
-/// Resolución lógica usada por la proyección ortográfica.
-constexpr float kScreenWidth = 1920.0f;
-constexpr float kScreenHeight = 1080.0f;
+/// Segmentos del círculo unitario: más segmentos = borde más suave.
+constexpr int kCircleSegments = 64;
 
-/// Código GLSL del vertex shader: aplica la proyección a cada vértice.
+/// Código GLSL del vertex shader: proyección ortográfica + transformación modelo.
 const char* kVertexSrc = R"(
 #version 330 core
 layout(location = 0) in vec2 aPos;
 
-// Matriz de proyección ortográfica: convierte coordenadas de pantalla a NDC.
-uniform mat4 uProjection;
+uniform mat4 uProjection;  // pantalla (0..width, 0..height) -> NDC
+uniform mat4 uModel;       // escala/rotación/traslación de la figura
 
 void main() {
-    gl_Position = uProjection * vec4(aPos, 0.0, 1.0);
+    gl_Position = uProjection * uModel * vec4(aPos, 0.0, 1.0);
 }
 )";
 
-/// Código GLSL del fragment shader: color rojo plano.
+/// Código GLSL del fragment shader: color plano por uniform.
 const char* kFragmentSrc = R"(
 #version 330 core
+uniform vec3 uColor;
 out vec4 FragColor;
+
 void main() {
-    FragColor = vec4(1.0, 0.0, 0.0, 1.0); // rojo
+    FragColor = vec4(uColor, 1.0);
 }
 )";
 
@@ -98,13 +95,56 @@ unsigned int linkProgram(unsigned int vertexShader, unsigned int fragmentShader)
     return program;
 }
 
+/**
+ * @brief Sube una malla 2D (posiciones vec2) a un VAO/VBO nuevos.
+ * @param vertices Vértices intercalados (x, y, x, y, ...).
+ * @param vao      VAO de salida.
+ * @param vbo      VBO de salida.
+ */
+void uploadMesh(const std::vector<float>& vertices, unsigned int& vao, unsigned int& vbo) {
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                 vertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
+}
+
+/**
+ * @brief Genera los vértices de un círculo unitario como abanico de triángulos.
+ *
+ * El primer vértice es el centro (0,0) y los siguientes recorren la
+ * circunferencia; se repite el primero al final para cerrar el abanico.
+ * @return Vector intercalado (x, y) listo para subir a la GPU.
+ */
+std::vector<float> makeUnitCircleVertices() {
+    std::vector<float> vertices;
+    vertices.reserve(static_cast<std::size_t>(kCircleSegments + 2) * 2);
+
+    vertices.push_back(0.0f);
+    vertices.push_back(0.0f);
+
+    for (int i = 0; i <= kCircleSegments; ++i) {
+        const float angle = 2.0f * 3.14159265358979323846f * static_cast<float>(i)
+                            / static_cast<float>(kCircleSegments);
+        vertices.push_back(std::cos(angle));
+        vertices.push_back(std::sin(angle));
+    }
+    return vertices;
+}
+
 }  // namespace
 
-bool Renderer::init() {
+bool Renderer::init(int screenWidth, int screenHeight) {
     if (!buildShaderProgram()) {
         return false;
     }
-    uploadProjection();
+    uploadProjection(screenWidth, screenHeight);
     return setupGeometry();
 }
 
@@ -125,71 +165,85 @@ bool Renderer::buildShaderProgram() {
     // Los shaders ya están enlazados: se pueden liberar en cualquier caso.
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
-    return m_shaderProgram != 0;
+    if (m_shaderProgram == 0) {
+        return false;
+    }
+
+    m_projectionLocation = glGetUniformLocation(m_shaderProgram, "uProjection");
+    m_modelLocation = glGetUniformLocation(m_shaderProgram, "uModel");
+    m_colorLocation = glGetUniformLocation(m_shaderProgram, "uColor");
+    return true;
 }
 
-void Renderer::uploadProjection() {
-    // Mapea el espacio de pantalla (0,1920) x (0,1080) a NDC.
+void Renderer::uploadProjection(int screenWidth, int screenHeight) {
+    // Mapea el espacio de pantalla (0,width) x (0,height) a NDC, con Y hacia arriba.
     const glm::mat4 projection = glm::ortho(
-        0.0f, kScreenWidth,   // left, right
-        0.0f, kScreenHeight,  // bottom, top
-        -1.0f, 1.0f           // near, far
-    );
+        0.0f, static_cast<float>(screenWidth),
+        0.0f, static_cast<float>(screenHeight),
+        -1.0f, 1.0f);
 
     glUseProgram(m_shaderProgram);
-    const int location = glGetUniformLocation(m_shaderProgram, "uProjection");
-    glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(projection));
+    glUniformMatrix4fv(m_projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
 }
 
 bool Renderer::setupGeometry() {
-    // Rectángulo centrado en pantalla, en píxeles: (760,440)–(1160,640).
-    const float vertices[] = {
-         760.0f,  640.0f,  // superior izquierdo
-         760.0f,  440.0f,  // inferior izquierdo
-        1160.0f,  440.0f,  // inferior derecho
-        1160.0f,  640.0f   // superior derecho
+    const std::vector<float> circleVertices = makeUnitCircleVertices();
+    uploadMesh(circleVertices, m_circleVAO, m_circleVBO);
+    m_circleVertexCount = static_cast<unsigned int>(circleVertices.size() / 2);
+
+    // Quad unitario (-1..1) en orden de triangle strip: BL, BR, TL, TR.
+    const std::vector<float> quadVertices = {
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+        -1.0f,  1.0f,
+         1.0f,  1.0f,
     };
-    const unsigned int indices[] = {0, 1, 2, 0, 2, 3};
+    uploadMesh(quadVertices, m_rectVAO, m_rectVBO);
 
-    glGenVertexArrays(1, &m_VAO);
-    glGenBuffers(1, &m_VBO);
-    glGenBuffers(1, &m_EBO);
-
-    glBindVertexArray(m_VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-    // Atributo 0: posición (vec2) con stride de 2 floats.
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
-    glEnableVertexAttribArray(0);
-
-    glBindVertexArray(0);
-    return m_VAO != 0 && m_VBO != 0 && m_EBO != 0;
+    return m_circleVAO != 0 && m_circleVBO != 0 && m_rectVAO != 0 && m_rectVBO != 0;
 }
 
-void Renderer::render() {
+void Renderer::drawCircle(const glm::vec2& center, float radius, const glm::vec3& color) {
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(center, 0.0f));
+    model = glm::scale(model, glm::vec3(radius, radius, 1.0f));
+    drawPrimitive(m_circleVAO, m_circleVertexCount, GL_TRIANGLE_FAN, model, color);
+}
+
+void Renderer::drawRect(const glm::vec2& center, const glm::vec2& size,
+                        float angleRadians, const glm::vec3& color) {
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(center, 0.0f));
+    model = glm::rotate(model, angleRadians, glm::vec3(0.0f, 0.0f, 1.0f));
+    model = glm::scale(model, glm::vec3(size.x * 0.5f, size.y * 0.5f, 1.0f));
+    drawPrimitive(m_rectVAO, 4, GL_TRIANGLE_STRIP, model, color);
+}
+
+void Renderer::drawPrimitive(unsigned int vao, unsigned int vertexCount, unsigned int mode,
+                             const glm::mat4& model, const glm::vec3& color) {
     glUseProgram(m_shaderProgram);
-    glBindVertexArray(m_VAO);
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+    glUniformMatrix4fv(m_modelLocation, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform3fv(m_colorLocation, 1, glm::value_ptr(color));
+
+    glBindVertexArray(vao);
+    glDrawArrays(mode, 0, static_cast<int>(vertexCount));
     glBindVertexArray(0);
 }
 
 void Renderer::cleanup() {
-    if (m_EBO != 0) {
-        glDeleteBuffers(1, &m_EBO);
-        m_EBO = 0;
+    if (m_circleVBO != 0) {
+        glDeleteBuffers(1, &m_circleVBO);
+        m_circleVBO = 0;
     }
-    if (m_VBO != 0) {
-        glDeleteBuffers(1, &m_VBO);
-        m_VBO = 0;
+    if (m_circleVAO != 0) {
+        glDeleteVertexArrays(1, &m_circleVAO);
+        m_circleVAO = 0;
     }
-    if (m_VAO != 0) {
-        glDeleteVertexArrays(1, &m_VAO);
-        m_VAO = 0;
+    if (m_rectVBO != 0) {
+        glDeleteBuffers(1, &m_rectVBO);
+        m_rectVBO = 0;
+    }
+    if (m_rectVAO != 0) {
+        glDeleteVertexArrays(1, &m_rectVAO);
+        m_rectVAO = 0;
     }
     if (m_shaderProgram != 0) {
         glDeleteProgram(m_shaderProgram);

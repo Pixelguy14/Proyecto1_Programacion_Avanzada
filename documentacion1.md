@@ -144,6 +144,7 @@ https://community.khronos.org/t/3d-object-slicing-algorithm/63035/2
 https://github.com/ifilot/opengl-cpp-course/blob/master/lesson04/README.md
 https://www3.ntu.edu.sg/home/ehchua/programming/opengl/CG_Examples.html
 https://learnopengl.com/In-Practice/2D-Game/Audio
+https://www.opengl.org/archives/resources/code/samples/advanced/advanced97/notes/node181.html
 
 Cap. 2.6 de Nature of Code (*The Nature of Code* – Daniel Shiffman.)
 Cap. 1 (Vectores y sistemas de coordenadas)

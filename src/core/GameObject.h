@@ -14,11 +14,20 @@
  *
  * Uso del polimorfismo:
  * @code
- *   std::vector<GameObject*> objects;
- *   objects.push_back(new Fruit(...));
- *   for (auto* obj : objects) obj->update(dt); // llama al update de cada tipo
+ *   std::vector<std::unique_ptr<GameObject>> objects;
+ *   objects.push_back(std::make_unique<Fruit>(...));
+ *   for (auto& obj : objects) obj->update(dt); // llama al update de cada tipo
  * @endcode
+ *
+ * ## ¿Por qué render(Renderer&) y no render()?
+ * La versión sin argumentos obligaría a usar un Renderer global o un singleton.
+ * Pasar el renderer explícitamente mantiene las dependencias visibles y permite
+ * testear las entidades con un renderer simulado. Sigue siendo un método virtual
+ * puro, como pide el enunciado.
  */
+
+class Renderer;
+
 class GameObject {
 public:
     /**
@@ -29,8 +38,9 @@ public:
 
     /**
      * @brief Dibuja el objeto en pantalla.
+     * @param renderer Renderer compartido donde se dibujan las primitivas.
      */
-    virtual void render() = 0;
+    virtual void render(Renderer& renderer) = 0;
 
     /**
      * @brief Indica si el objeto está activo (vivo/visible) en la escena.
