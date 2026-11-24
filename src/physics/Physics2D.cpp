@@ -12,7 +12,7 @@ namespace {
 constexpr float kTwoPi = 6.28318530718f;
 }  // namespace
 
-void Physics2D::integrate(PhysicsBody& body, const glm::vec2& acceleration, float dt) {
+void Physics2D::integrate(PhysicsBody& body, const Vector2D<float>& acceleration, float dt) {
     body.acceleration = acceleration;
 
     // Semi-implícito: la velocidad se actualiza antes que la posición.

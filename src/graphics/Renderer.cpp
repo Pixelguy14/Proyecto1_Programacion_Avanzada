@@ -27,6 +27,12 @@ namespace {
 /// Segmentos del círculo unitario: más segmentos = borde más suave.
 constexpr int kCircleSegments = 64;
 
+/// Segmentos del semicírculo unitario (mitad de fruta).
+constexpr int kSemicircleSegments = 40;
+
+/// π, usado para generar la malla del semicírculo.
+constexpr float kPi = 3.14159265358979323846f;
+
 /// Distancia mínima para considerar válida una dirección en la estela.
 constexpr float kMinDirectionLength = 1e-4f;
 
@@ -192,8 +198,31 @@ std::vector<float> makeUnitCircleVertices() {
     vertices.push_back(0.0f);
 
     for (int i = 0; i <= kCircleSegments; ++i) {
-        const float angle = 2.0f * 3.14159265358979323846f * static_cast<float>(i)
+        const float angle = 2.0f * kPi * static_cast<float>(i)
                             / static_cast<float>(kCircleSegments);
+        vertices.push_back(std::cos(angle));
+        vertices.push_back(std::sin(angle));
+    }
+    return vertices;
+}
+
+/**
+ * @brief Genera los vértices de un semicírculo unitario (de 0 a π).
+ *
+ * El diámetro queda sobre el eje X y el cuerpo en el semieje positivo de Y.
+ * El primer vértice es el centro (0,0) y los siguientes recorren el arco.
+ * @return Vector intercalado (x, y) listo para subir a la GPU.
+ */
+std::vector<float> makeUnitSemicircleVertices() {
+    std::vector<float> vertices;
+    vertices.reserve(static_cast<std::size_t>(kSemicircleSegments + 2) * 2);
+
+    vertices.push_back(0.0f);
+    vertices.push_back(0.0f);
+
+    for (int i = 0; i <= kSemicircleSegments; ++i) {
+        const float angle = kPi * static_cast<float>(i)
+                            / static_cast<float>(kSemicircleSegments);
         vertices.push_back(std::cos(angle));
         vertices.push_back(std::sin(angle));
     }
@@ -316,6 +345,10 @@ bool Renderer::setupGeometry() {
     };
     uploadMesh(quadVertices, m_rectVAO, m_rectVBO);
 
+    const std::vector<float> semicircleVertices = makeUnitSemicircleVertices();
+    uploadMesh(semicircleVertices, m_semiVAO, m_semiVBO);
+    m_semiVertexCount = static_cast<unsigned int>(semicircleVertices.size() / 2);
+
     // Malla dinámica de la estela: posición (vec2) + alpha (float) por vértice.
     glGenVertexArrays(1, &m_trailVAO);
     glGenBuffers(1, &m_trailVBO);
@@ -334,6 +367,7 @@ bool Renderer::setupGeometry() {
 
     return m_circleVAO != 0 && m_circleVBO != 0
         && m_rectVAO != 0 && m_rectVBO != 0
+        && m_semiVAO != 0 && m_semiVBO != 0
         && m_trailVAO != 0 && m_trailVBO != 0;
 }
 
@@ -349,6 +383,14 @@ void Renderer::drawRect(const glm::vec2& center, const glm::vec2& size,
     model = glm::rotate(model, angleRadians, glm::vec3(0.0f, 0.0f, 1.0f));
     model = glm::scale(model, glm::vec3(size.x * 0.5f, size.y * 0.5f, 1.0f));
     drawPrimitive(m_rectVAO, 4, GL_TRIANGLE_STRIP, model, color);
+}
+
+void Renderer::drawSemicircle(const glm::vec2& center, float radius, float angleRadians,
+                              const glm::vec3& color) {
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(center, 0.0f));
+    model = glm::rotate(model, angleRadians, glm::vec3(0.0f, 0.0f, 1.0f));
+    model = glm::scale(model, glm::vec3(radius, radius, 1.0f));
+    drawPrimitive(m_semiVAO, m_semiVertexCount, GL_TRIANGLE_FAN, model, color);
 }
 
 void Renderer::drawTrail(const std::vector<TrailPoint>& points, const glm::vec4& color) {
@@ -404,6 +446,14 @@ void Renderer::cleanup() {
     if (m_rectVAO != 0) {
         glDeleteVertexArrays(1, &m_rectVAO);
         m_rectVAO = 0;
+    }
+    if (m_semiVBO != 0) {
+        glDeleteBuffers(1, &m_semiVBO);
+        m_semiVBO = 0;
+    }
+    if (m_semiVAO != 0) {
+        glDeleteVertexArrays(1, &m_semiVAO);
+        m_semiVAO = 0;
     }
     if (m_shaderProgram != 0) {
         glDeleteProgram(m_shaderProgram);

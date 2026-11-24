@@ -80,14 +80,14 @@ std::unique_ptr<Fruit> Spawner::spawnFruit() {
                                      m_screenHeight * kMaxRadiusFactor);
 
     // Nace justo por debajo del borde inferior.
-    const glm::vec2 position{
+    const Vector2D<float> position{
         randomFloat(m_screenWidth * kSpawnXMinFactor, m_screenWidth * kSpawnXMaxFactor),
         -radius,
     };
 
     const float apex = randomFloat(m_screenHeight * kMinApexFactor,
                                    m_screenHeight * kMaxApexFactor);
-    const glm::vec2 velocity{
+    const Vector2D<float> velocity{
         randomFloat(-m_screenWidth * kMaxHorizontalSpeedFactor,
                      m_screenWidth * kMaxHorizontalSpeedFactor),
         launchSpeedForApex(apex),

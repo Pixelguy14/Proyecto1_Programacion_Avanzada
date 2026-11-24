@@ -181,7 +181,103 @@ The file will be updated after each sprint with detailed explanations of the imp
 - Juego real ejecutado sin errores con la entrada registrada.
 
 ## Sprint 3 – Collision & Cutting
-> (To be filled after completion)
+**Goal:** Detect the sword hitting a fruit, change its state and replace it with two
+flying halves.
+
+### Tasks
+1. Implement segment-circle intersection math (the sword is a series of segments, the
+   fruit is a circle).
+2. On collision, change the fruit state to "Sliced".
+3. Create the `FruitHalf` class; spawn two halves with diverging velocities.
+4. Give the halves their own physics (gravity and rotation).
+
+### References
+- *The Nature of Code* – Chapter 2.6 (forces and integration).
+- Closest-point-on-segment projection (standard 2D collision math).
+
+### Implementación
+- `src/math/Collision.h/.cpp`
+  - `Collision::segmentIntersectsCircle(start, end, center, radius)`.
+  - Proyecta el centro sobre el segmento, recorta el parámetro a `[0, 1]` y compara
+    distancias **al cuadrado** (`≤ radius²`), sin raíces.
+  - Cubre los tres casos: centro frente al segmento, sobre él o más allá de un extremo;
+    también segmentos degenerados (`start == end`).
+- `src/entities/Fruit.h/.cpp`
+  - Migrada a `Vector2D<float>`: toda la simulación comparte el mismo tipo de vector.
+  - Estados en un registro de bits (`unsigned int m_flags`) con el namespace `FruitFlag`:
+    `kActive = 1u << 0`, `kSliced = 1u << 1`, `kBomb = 1u << 2`.
+  - Operaciones bitwise expuestas: `addFlag` (`|=`), `removeFlag` (`&= ~`),
+    `toggleFlag` (`^=`), `hasFlag` (`&`). Una fruta puede ser `kActive | kBomb`.
+  - `isAlive()` se sobrescribe para depender de `kActive`: el estado lógico vive en un
+    único sitio (las banderas), no en un `bool` paralelo.
+  - `slice(cutDirection)` alinea el diámetro con el tajo (`atan2`), separa las mitades
+    a lo largo de `direction.perpendicular()`, les da velocidades opuestas y giros
+    distintos, y marca la fruta como cortada. Devuelve
+    `std::pair<std::unique_ptr<FruitHalf>, std::unique_ptr<FruitHalf>>`.
+- `src/entities/FruitHalf.h/.cpp`
+  - Semicírculo con `PhysicsBody` propio, gravedad, rotación y culling inferior.
+  - `render()` dibuja la cáscara (color original) y una pulpa más clara y concéntrica
+    (`drawSemicircle` dos veces).
+  - Expone `position()`, `velocity()`, `radius()` y `angle()`.
+- `src/graphics/Renderer.h/.cpp`
+  - Nueva malla unitaria de semicírculo (0 a π, 40 segmentos) y
+    `drawSemicircle(center, radius, angle, color)` con `GL_TRIANGLE_FAN`.
+  - Liberación de `m_semiVAO`/`m_semiVBO` en `cleanup()`.
+- `src/entities/Blade.h/.cpp`
+  - `CutResult { bool hit; Vector2D<float> direction; }`.
+  - `cutAt(center, radius)` recorre los segmentos del historial del más reciente al más
+    antiguo y devuelve la dirección del primero que intersecta.
+- `src/main.cpp`
+  - `sliceFruits()` identifica las `Fruit` con `dynamic_cast`, consulta `Blade::cutAt()`
+    y recoge las mitades en un vector temporal para no invalidar el iterador.
+  - Orden del bucle: `updateObjects` → `blade.update` → `sliceFruits` →
+    `removeDeadObjects` → render. La espada se actualiza antes de cortar y las frutas
+    cortadas se liberan en el mismo frame.
+- `src/physics/Physics2D.h/.cpp` y `src/entities/Spawner.cpp`
+  - Migrados a `Vector2D<float>` para no mezclar GLM (render) con la simulación.
+
+### Checklist
+- [x] Intersección segmento-círculo implementada y probada.
+- [x] Estado de fruta con banderas y operaciones `&`, `|`, `^`, `&= ~`.
+- [x] `Fruit::slice()` genera dos `FruitHalf` con velocidades divergentes.
+- [x] Mitades con gravedad, rotación y culling.
+- [x] `Blade::cutAt()` devuelve la dirección real del segmento que cortó.
+- [x] El juego sustituye la fruta cortada por dos mitades.
+- [x] Compila sin advertencias (`-Wall -Wextra -Wpedantic`).
+- [x] Pruebas de colisión, banderas, corte y física de mitades superadas.
+- [x] Verificado visualmente con un arnés temporal (`build/sprint3.png`).
+
+### Decisiones de diseño
+- **Vector2D también en la física**: mezclar `glm::vec2` y `Vector2D` en el mismo cálculo
+  obligaba a conversiones constantes. GLM queda solo para matrices en el renderer.
+- **Estado en bits, no en `bool`s**: el enunciado pide `&`, `|`, `^`; un registro permite
+  combinar estados (activa y bomba) y comprobarlos con una sola operación.
+- **`slice()` devuelve `unique_ptr`**: la propiedad de las mitades pasa al bucle, que las
+  mete en el mismo `vector<unique_ptr<GameObject>>`; no hay `new`/`delete` manuales.
+- **`dynamic_cast` solo al cortar**: las frutas necesitan datos que `GameObject` no
+  expone (posición, radio, banderas). El coste es bajo con pocas entidades y evita
+  añadir más virtuales a la clase base.
+- **Mitades separadas en el frame del corte**: se desplazan un poco a lo largo de la
+  perpendicular para que el hueco se vea desde el primer frame, además de su velocidad.
+- **Giro independiente por mitad**: además de la rotación heredada, cada mitad recibe
+  `±kHalfSpinSpeed`; así el corte se lee como dos cuerpos distintos en el aire.
+- **Semicírculo con malla propia**: reutilizar el círculo y recortarlo exigiría
+  `glScissor` o descartes en el fragment shader; una malla de 40 segmentos es más simple
+  y barata.
+- **Colisión solo con el historial de la espada**: el tajo es la polilínea reciente, no
+  un punto; así un movimiento rápido sigue cortando aunque el mouse salte píxeles.
+
+### Verificación
+- Prueba temporal con asserts:
+  - Segmento que atraviesa, roza (tangente), se queda corto y segmento degenerado.
+  - Banderas: activa, bomba combinada con `|`, alternancia con `^`, baja con `&= ~`.
+  - Corte: dos mitades no nulas, fruta marcada como `kSliced`, posiciones y velocidades
+    divergentes, segunda mitad girada π; corte repetido y bomba devuelven `nullptr`.
+  - Física: la mitad cae y muere fuera de pantalla; el ángulo avanza con el giro.
+- Arnés temporal: tajo diagonal inyectado en `Input` (Wayland no permite mover el
+  puntero por software); las mitades se congelan tras unos frames para capturar
+  `build/sprint3.png`, donde se ven cáscara, pulpa, separación y giro.
+- Juego real ejecutado sin errores con el corte integrado en el bucle.
 
 ## Sprint 4 – Game Loop, UI & Particles
 > (To be filled after completion)

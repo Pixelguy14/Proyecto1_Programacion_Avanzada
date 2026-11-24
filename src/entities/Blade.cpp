@@ -2,6 +2,7 @@
 
 #include "core/Input.h"
 #include "graphics/Renderer.h"
+#include "math/Collision.h"
 
 #include <algorithm>
 #include <vector>
@@ -58,6 +59,24 @@ void Blade::update(float dt) {
     while (m_trail.size() > kMaxPoints) {
         m_trail.pop_front();
     }
+}
+
+Blade::CutResult Blade::cutAt(const Vector2D<float>& center, float radius) const {
+    if (m_trail.size() < 2) {
+        return {};
+    }
+
+    // Del punto más reciente al más antiguo: el primer segmento que toca manda.
+    for (std::size_t i = m_trail.size(); i-- > 1;) {
+        const Vector2D<float>& newest = m_trail[i].position;
+        const Vector2D<float>& previous = m_trail[i - 1].position;
+
+        if (Collision::segmentIntersectsCircle(previous, newest, center, radius)) {
+            return CutResult{true, (newest - previous).normalized()};
+        }
+    }
+
+    return {};
 }
 
 void Blade::render(Renderer& renderer) {

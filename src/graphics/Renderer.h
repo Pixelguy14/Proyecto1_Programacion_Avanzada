@@ -6,16 +6,17 @@
 
 /**
  * @file Renderer.h
- * @brief Primitivas de dibujado 2D para el juego (Sprints 1–2).
+ * @brief Primitivas de dibujado 2D para el juego (Sprints 1–3).
  *
  * ## Jerarquía de responsabilidades
  * El Renderer conoce OpenGL (shaders, VAO/VBO, uniforms) y expone una API
  * sencilla en coordenadas de pantalla. Las entidades solo piden "dibuja un
  * círculo aquí", "dibuja esta estela"; no tocan OpenGL.
  *
- *   Fruit::render()  → drawCircle() / drawRect()
- *   Blade::render()  → drawTrail()
- *                        └── shader + VAO dinámico + blending
+ *   Fruit::render()      → drawCircle() / drawRect()
+ *   FruitHalf::render()  → drawSemicircle()
+ *   Blade::render()      → drawTrail()
+ *                            └── shader + VAO dinámico + blending
  *
  * La proyección ortográfica mapea (0..width, 0..height) a NDC, con Y hacia
  * arriba, de modo que las posiciones del juego se expresan en píxeles.
@@ -65,6 +66,20 @@ public:
                   float angleRadians, const glm::vec3& color);
 
     /**
+     * @brief Dibuja un semicírculo relleno (mitad de fruta).
+     * @param center       Centro del diámetro en píxeles.
+     * @param radius       Radio en píxeles.
+     * @param angleRadians Orientación del diámetro (positiva = antihorario).
+     * @param color        Color RGB en el rango [0, 1].
+     *
+     * La malla unitaria ocupa la mitad superior del disco (de 0 a π) con el
+     * diámetro sobre el eje X; `angleRadians` lo alinea con la dirección del
+     * corte. Para la mitad opuesta basta sumar π al ángulo.
+     */
+    void drawSemicircle(const glm::vec2& center, float radius, float angleRadians,
+                        const glm::vec3& color);
+
+    /**
      * @brief Dibuja una estela como cinta (triangle strip) con grosor y alpha.
      * @param points Puntos ordenados del más antiguo al más reciente.
      * @param color  Color RGBA base en el rango [0, 1].
@@ -95,7 +110,7 @@ private:
     void uploadProjection(int screenWidth, int screenHeight);
 
     /**
-     * @brief Crea las mallas: círculo, quad y el VBO dinámico de la estela.
+     * @brief Crea las mallas: círculo, semicírculo, quad y VBO dinámico de la estela.
      * @return true si los buffers se generaron correctamente.
      */
     bool setupGeometry();
@@ -116,7 +131,10 @@ private:
     unsigned int m_circleVBO = 0;  ///< VBO del círculo unitario.
     unsigned int m_rectVAO = 0;    ///< VAO del quad unitario (-1..1).
     unsigned int m_rectVBO = 0;    ///< VBO del quad unitario.
+    unsigned int m_semiVAO = 0;    ///< VAO del semicírculo unitario.
+    unsigned int m_semiVBO = 0;    ///< VBO del semicírculo unitario.
     unsigned int m_circleVertexCount = 0;  ///< Vértices del abanico del círculo.
+    unsigned int m_semiVertexCount = 0;    ///< Vértices del abanico del semicírculo.
 
     unsigned int m_trailVAO = 0;   ///< VAO de la estela dinámica.
     unsigned int m_trailVBO = 0;   ///< VBO de la estela (se reescribe cada frame).

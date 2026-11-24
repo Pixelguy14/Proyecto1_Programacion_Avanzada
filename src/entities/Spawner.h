@@ -9,11 +9,13 @@
 
 /**
  * @file Spawner.h
- * @brief Generador de frutas para el Sprint 1.
+ * @brief Generador de frutas (Sprints 1–3).
  *
  * El Spawner decide *cuándo* y *cómo* nace una fruta: temporización aleatoria,
  * posición por debajo de la pantalla, velocidad de lanzamiento y color. No
  * almacena frutas; devuelve una nueva y el bucle principal se encarga de ella.
+ * Las frutas nacen con la bandera `FruitFlag::kActive`; las bombas (`kBomb`)
+ * se incorporarán en un sprint posterior.
  *
  *   runGameLoop()
  *     └── Spawner::trySpawn()

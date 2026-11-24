@@ -2,14 +2,15 @@
 
 /**
  * @file Physics2D.h
- * @brief Integración de Euler semi-implícita y gravedad para el Sprint 1.
+ * @brief Integración de Euler semi-implícita y gravedad.
  *
  * ## Jerarquía
- *   Fruit::update()
+ *   Fruit::update() / FruitHalf::update()
  *     └── Physics2D::integrate()          (traduce aceleración → posición)
  *
  * `PhysicsBody` solo guarda el estado cinemático; no sabe dibujar ni conoce
- * la pantalla. Así la física se puede reutilizar en Fruit, FruitHalf, etc.
+ * la pantalla. Usa `Vector2D<float>` (la clase del proyecto) para que toda la
+ * simulación comparta el mismo tipo de vector; GLM queda para el renderer.
  *
  * ## Integración de Euler semi-implícita
  * Se actualiza primero la velocidad y después la posición con la velocidad ya
@@ -18,24 +19,23 @@
  *   velocity += acceleration * dt;
  *   position += velocity * dt;
  * @endcode
- * Es estable con dt fijos razonables y es el método que pide el enunciado.
  */
 
-#include <glm/glm.hpp>
+#include "math/Vector2D.h"
 
 /**
  * @brief Estado cinemático de un cuerpo puntual en 2D.
  */
 struct PhysicsBody {
-    glm::vec2 position{0.0f};      ///< Posición en píxeles de pantalla.
-    glm::vec2 velocity{0.0f};      ///< Velocidad en píxeles/segundo.
-    glm::vec2 acceleration{0.0f};  ///< Aceleración en píxeles/segundo².
+    Vector2D<float> position{};      ///< Posición en píxeles de pantalla.
+    Vector2D<float> velocity{};      ///< Velocidad en píxeles/segundo.
+    Vector2D<float> acceleration{};  ///< Aceleración en píxeles/segundo².
 };
 
 namespace Physics2D {
 
 /// Gravedad del juego en píxeles/s² (Y positiva hacia arriba, como la pantalla).
-inline const glm::vec2 kGravity{0.0f, -980.0f};
+inline const Vector2D<float> kGravity{0.0f, -980.0f};
 
 /**
  * @brief Aplica una aceleración constante y avanza el cuerpo un paso de tiempo.
@@ -43,7 +43,7 @@ inline const glm::vec2 kGravity{0.0f, -980.0f};
  * @param acceleration Aceleración externa, normalmente Physics2D::kGravity.
  * @param dt           Delta time en segundos.
  */
-void integrate(PhysicsBody& body, const glm::vec2& acceleration, float dt);
+void integrate(PhysicsBody& body, const Vector2D<float>& acceleration, float dt);
 
 /**
  * @brief Avanza el ángulo de un cuerpo con velocidad angular constante.

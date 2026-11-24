@@ -2,6 +2,10 @@
 #include "core/Input.h"
 #include "core/Window.h"
 #include "entities/Blade.h"
+#include "entities/Fruit.h"
+// FruitHalf completo: hace falta para convertir unique_ptr<FruitHalf> en
+// unique_ptr<GameObject> al añadir las mitades a la lista polimórfica.
+#include "entities/FruitHalf.h"
 #include "entities/Spawner.h"
 #include "graphics/Renderer.h"
 
@@ -24,8 +28,9 @@
  *     └── runGameLoop()
  *           ├── trySpawn()          (añade frutas)
  *           ├── updateObjects()     (física de cada entidad)
- *           ├── removeDeadObjects() (libera las que ya cayeron)
  *           ├── blade.update()      (registra el recorrido del mouse)
+ *           ├── sliceFruits()       (colisión espada-fruta → mitades)
+ *           ├── removeDeadObjects() (libera frutas cortadas o caídas)
  *           └── renderObjects() + blade.render()
  */
 
@@ -67,6 +72,47 @@ void removeDeadObjects(GameObjectList& objects) {
 }
 
 /**
+ * @brief Corta las frutas activas que toque el recorrido reciente de la espada.
+ * @param objects Lista de entidades (se le añaden las mitades resultantes).
+ * @param blade   Espada con el historial de posiciones ya actualizado.
+ *
+ * Recorre las entidades, identifica las `Fruit` con `dynamic_cast` y consulta
+ * `Blade::cutAt()`. Por cada impacto, `Fruit::slice()` devuelve dos mitades que
+ * se recogen en un vector temporal y se añaden al final, para no invalidar el
+ * iterador mientras se recorre la lista. Las frutas cortadas quedan con la
+ * bandera `kSliced` y sin `kActive`, así que `removeDeadObjects()` las libera.
+ */
+void sliceFruits(GameObjectList& objects, const Blade& blade) {
+    GameObjectList halves;
+
+    for (auto& object : objects) {
+        auto* fruit = dynamic_cast<Fruit*>(object.get());
+        if (fruit == nullptr
+            || !fruit->hasFlag(FruitFlag::kActive)
+            || fruit->hasFlag(FruitFlag::kBomb)) {
+            continue;
+        }
+
+        const Blade::CutResult cut = blade.cutAt(fruit->position(), fruit->radius());
+        if (!cut.hit) {
+            continue;
+        }
+
+        auto [first, second] = fruit->slice(cut.direction);
+        if (first) {
+            halves.push_back(std::move(first));
+        }
+        if (second) {
+            halves.push_back(std::move(second));
+        }
+    }
+
+    for (auto& half : halves) {
+        objects.push_back(std::move(half));
+    }
+}
+
+/**
  * @brief Dibuja todas las entidades.
  * @param objects  Lista de entidades.
  * @param renderer Renderer compartido.
@@ -102,8 +148,9 @@ void runGameLoop(Window& window, Renderer& renderer, Spawner& spawner, const Inp
         }
 
         updateObjects(objects, dt);
-        removeDeadObjects(objects);
         blade.update(dt);
+        sliceFruits(objects, blade);
+        removeDeadObjects(objects);
 
         window.clear();
         renderObjects(objects, renderer);
