@@ -1,5 +1,7 @@
 #include "core/GameObject.h"
+#include "core/Input.h"
 #include "core/Window.h"
+#include "entities/Blade.h"
 #include "entities/Spawner.h"
 #include "graphics/Renderer.h"
 
@@ -15,13 +17,16 @@
  * ## Jerarquía
  *   main()
  *     ├── Window    → ventana, contexto OpenGL, tiempo y eventos
- *     ├── Renderer  → primitivas de dibujado (círculo, rectángulo)
+ *     ├── Input     → posición del mouse mediante callbacks GLFW
+ *     ├── Renderer  → primitivas de dibujado (círculo, rectángulo, estela)
  *     ├── Spawner   → crea frutas cada cierto tiempo
+ *     ├── Blade     → historial del mouse y estela de la espada
  *     └── runGameLoop()
  *           ├── trySpawn()          (añade frutas)
  *           ├── updateObjects()     (física de cada entidad)
  *           ├── removeDeadObjects() (libera las que ya cayeron)
- *           └── renderObjects()     (dibuja todas)
+ *           ├── blade.update()      (registra el recorrido del mouse)
+ *           └── renderObjects() + blade.render()
  */
 
 namespace {
@@ -77,8 +82,13 @@ void renderObjects(const GameObjectList& objects, Renderer& renderer) {
  * @param window   Ventana ya inicializada.
  * @param renderer Renderer ya inicializado.
  * @param spawner  Spawner ligado a la resolución de la ventana.
+ * @param input    Entrada ya registrada sobre la ventana.
+ *
+ * La espada se dibuja al final para que su estela quede por encima de las frutas.
  */
-void runGameLoop(Window& window, Renderer& renderer, Spawner& spawner) {
+void runGameLoop(Window& window, Renderer& renderer, Spawner& spawner, const Input& input) {
+    Blade blade(input);
+
     GameObjectList objects;
     objects.reserve(64);  // capacidad inicial para evitar reallocaciones frecuentes
 
@@ -93,9 +103,11 @@ void runGameLoop(Window& window, Renderer& renderer, Spawner& spawner) {
 
         updateObjects(objects, dt);
         removeDeadObjects(objects);
+        blade.update(dt);
 
         window.clear();
         renderObjects(objects, renderer);
+        blade.render(renderer);
         window.swapBuffers();
     }
 }
@@ -103,7 +115,7 @@ void runGameLoop(Window& window, Renderer& renderer, Spawner& spawner) {
 }  // namespace
 
 /**
- * @brief Crea la ventana, el renderer y el spawner; ejecuta y libera recursos.
+ * @brief Crea la ventana, renderer, entrada y spawner; ejecuta y libera recursos.
  * @return 0 si el juego terminó correctamente; 1 si falló la inicialización.
  */
 int main() {
@@ -120,10 +132,18 @@ int main() {
         return 1;
     }
 
+    Input input;
+    if (!input.attach(window.handle(), window.height())) {
+        std::cerr << "[main] No se pudo registrar la entrada." << std::endl;
+        renderer.cleanup();
+        window.terminate();
+        return 1;
+    }
+
     Spawner spawner(static_cast<float>(window.width()),
                     static_cast<float>(window.height()));
 
-    runGameLoop(window, renderer, spawner);
+    runGameLoop(window, renderer, spawner, input);
 
     renderer.cleanup();
     window.terminate();

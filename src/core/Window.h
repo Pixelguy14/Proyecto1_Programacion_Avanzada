@@ -88,6 +88,9 @@ public:
     /// @return Alto lógico solicitado al crear la ventana, en píxeles.
     int height() const { return m_height; }
 
+    /// @return Handle nativo de GLFW para registrar callbacks de entrada.
+    GLFWwindow* handle() const { return m_window; }
+
 private:
     /**
      * @brief Crea la ventana GLFW con el perfil de OpenGL 3.3 core.

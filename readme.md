@@ -3,8 +3,9 @@
 Clon de **Fruit Ninja** en C++17 con OpenGL 3.3 core, basado en *The Nature of Code*
 (cap. 2.6) y el trackeo del mouse.
 
-Estado actual: **Sprint 1 terminado** (frutas con física parabólica, rotación y spawner
-aleatorio). Ver [`process.md`](process.md) para el detalle de cada sprint.
+Estado actual: **Sprint 2 terminado** (mouse capturado con GLFW, estela de la espada con
+desvanecido y `Vector2D<T>` con sobrecarga de operadores). Ver
+[`process.md`](process.md) para el detalle de cada sprint.
 
 ---
 
@@ -163,6 +164,9 @@ cmake --build build --parallel
 Al ejecutarse debe abrirse una ventana de **1920×1080** titulada *Fruit Ninja* con
 **frutas de colores** que salen disparadas desde debajo de la pantalla, suben, giran y
 caen por gravedad. Ese es el entregable del Sprint 1.
+
+**Controles (Sprint 2):** mueve el mouse por la ventana para dibujar la estela de la
+espada. El cursor del sistema se oculta y la estela se desvanece al detener el mouse.
 
 ---
 

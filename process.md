@@ -123,7 +123,62 @@ The file will be updated after each sprint with detailed explanations of the imp
 - Captura de la ventana (`build/sprint1.png`, no versionada) con tres frutas en distintas fases del vuelo y tallos con ángulos distintos.
 
 ## Sprint 2 – Blade Trail
-> (To be filled after completion)
+**Goal:** Capture the mouse, keep a short history of its path and render it as a thick, fading trail.
+
+### Tasks
+1. Capture the mouse position using GLFW callbacks.
+2. Create a `Blade` class that stores the last 10–15 positions (`std::deque`).
+3. Render the history as a thick strip (`GL_LINE_STRIP` conceptually) with fading.
+4. Add a visual fade: alpha and width decrease toward the oldest points.
+
+### References
+- *The Nature of Code* – tracking and vector math.
+- GLFW input guide (cursor position and mouse button callbacks).
+
+### Implementación
+- `src/math/Vector2D.h`
+  - Plantilla `Vector2D<T>` con `+`, `-`, `*`, `/`, `+=`, `-=`, `*=`, `/=`, `==`, negación, `dot`, `length`, `distanceTo`, `normalized` y `perpendicular`.
+  - Alias `Vector2f`. GLM se mantiene solo para matrices en el renderer.
+- `src/core/Input.h/.cpp`
+  - `attach()` registra `glfwSetCursorPosCallback` y `glfwSetMouseButtonCallback`, oculta el cursor y guarda la posición inicial.
+  - `glfwSetWindowUserPointer` conecta los callbacks estáticos con la instancia de `Input`.
+  - Convierte Y de GLFW (origen arriba) al espacio del juego (origen abajo).
+- `src/entities/Blade.h/.cpp`
+  - `std::deque<TrailPoint>` con posición y antigüedad; máximo 24 puntos.
+  - Un punto se añade solo si el mouse se movió ≥ 2 px (evita duplicados).
+  - Los puntos caducan a los 0.18 s, así que la estela se desvanece incluso al detener el mouse.
+  - `render()` calcula grosor (2.5–14 px) y alpha (0–1) por punto y dibuja la punta.
+- `src/graphics/Renderer.h/.cpp`
+  - `drawTrail()` construye una cinta (triangle strip) con dos vértices por punto, normal perpendicular a la dirección de avance.
+  - Atributo por vértice: posición + alpha; VBO dinámico reescrito cada frame.
+  - Shader propio para la estela y blending `GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`.
+- `src/main.cpp`
+  - `Input` se registra tras inicializar la ventana; `Blade` vive en `runGameLoop`.
+  - La espada se actualiza después de las frutas y se dibuja al final (queda por encima).
+
+### Checklist
+- [x] Posición del mouse capturada con callbacks de GLFW.
+- [x] `Blade` guarda el historial en `std::deque`.
+- [x] Estela con grosor real (cinta, no `glLineWidth`).
+- [x] Desvanecido por alpha y afinado hacia el extremo antiguo.
+- [x] `Vector2D<T>` con operadores `+`, `-`, `=` y compuestos.
+- [x] Compila sin advertencias (`-Wall -Wextra -Wpedantic`).
+- [x] Verificado visualmente con un arnés temporal (`build/sprint2.png`).
+
+### Decisiones de diseño
+- **`Vector2D<T>` propia para la lógica**: cumple el requisito de plantillas y sobrecarga sin abandonar GLM en el renderer, donde `glm::ortho`/`glm::rotate` son más adecuadas.
+- **Cinta en vez de `GL_LINE_STRIP`**: el grosor de líneas en core profile depende del driver (a menudo 1 px). Generar una cinta con `GL_TRIANGLE_STRIP` da grosor y alpha reales y es portable.
+- **Desvanecido por tiempo, no por índice**: un contador de antigüedad por punto permite que la estela desaparezca sola al detener el mouse; con fade por índice quedaría congelada.
+- **Caducidad + distancia mínima + tope de puntos**: controla el coste y evita segmentos degenerados (dos puntos casi iguales rompen la normal).
+- **Punta visible**: el cursor del sistema se oculta; un pequeño círculo en la posición actual evita que el jugador "pierda" el puntero cuando está quieto.
+- **Shader separado para la estela**: el shader sólido no necesita alpha por vértice; separarlos evita atributos por defecto y mantiene cada programa mínimo.
+- **Blade fuera del vector de entidades**: las frutas se añaden/eliminan dinámicamente; la espada es única y debe dibujarse siempre al final para quedar encima.
+- **`Input` dueño del user pointer de GLFW**: documentado en `Input.h`; si se añaden más callbacks habrá que centralizarlo en `Window`.
+
+### Verificación
+- Prueba de operadores de `Vector2D` (asserts) superada.
+- Arnés temporal: recorrido sintético en forma de ocho inyectado en `Input` (Wayland no permite mover el puntero por software), 300 frames a 60 fps; captura `build/sprint2.png` con estela, desvanecido, afinado y punta.
+- Juego real ejecutado sin errores con la entrada registrada.
 
 ## Sprint 3 – Collision & Cutting
 > (To be filled after completion)

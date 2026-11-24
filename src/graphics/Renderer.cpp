@@ -10,11 +10,14 @@
 
 /**
  * @file Renderer.cpp
- * @brief Implementación de las primitivas de dibujado 2D.
+ * @brief Implementación de las primitivas de dibujado 2D y de la estela.
  *
- * Todas las figuras se dibujan a partir de dos mallas unitarias (un círculo de
- * radio 1 y un quad de -1 a 1) transformadas con una matriz modelo. El vertex
- * shader aplica `uProjection * uModel`; el fragment shader usa `uColor`.
+ * Las figuras sólidas se dibujan a partir de dos mallas unitarias (círculo y
+ * quad) transformadas con una matriz modelo. La estela, en cambio, genera una
+ * cinta dinámica cada frame porque su geometría depende del recorrido del mouse.
+ *
+ * Blending (`GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`) permite que la estela se
+ * desvanezca sin afectar a las figuras opacas.
  *
  * Referencia: The Nature of Code – Cap. 1 (sistemas de coordenadas).
  */
@@ -24,7 +27,13 @@ namespace {
 /// Segmentos del círculo unitario: más segmentos = borde más suave.
 constexpr int kCircleSegments = 64;
 
-/// Código GLSL del vertex shader: proyección ortográfica + transformación modelo.
+/// Distancia mínima para considerar válida una dirección en la estela.
+constexpr float kMinDirectionLength = 1e-4f;
+
+/// Floats por vértice en la estela: x, y, alpha.
+constexpr int kTrailFloatsPerVertex = 3;
+
+/// Código GLSL del vertex shader de figuras sólidas.
 const char* kVertexSrc = R"(
 #version 330 core
 layout(location = 0) in vec2 aPos;
@@ -37,7 +46,7 @@ void main() {
 }
 )";
 
-/// Código GLSL del fragment shader: color plano por uniform.
+/// Código GLSL del fragment shader de figuras sólidas.
 const char* kFragmentSrc = R"(
 #version 330 core
 uniform vec3 uColor;
@@ -45,6 +54,35 @@ out vec4 FragColor;
 
 void main() {
     FragColor = vec4(uColor, 1.0);
+}
+)";
+
+/// Vertex shader de la estela: la posición ya viene en píxeles de pantalla.
+const char* kTrailVertexSrc = R"(
+#version 330 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in float aAlpha;
+
+uniform mat4 uProjection;
+
+out float vAlpha;
+
+void main() {
+    vAlpha = aAlpha;
+    gl_Position = uProjection * vec4(aPos, 0.0, 1.0);
+}
+)";
+
+/// Fragment shader de la estela: multiplica el alpha base por el del vértice.
+const char* kTrailFragmentSrc = R"(
+#version 330 core
+uniform vec4 uColor;
+
+in float vAlpha;
+out vec4 FragColor;
+
+void main() {
+    FragColor = vec4(uColor.rgb, uColor.a * vAlpha);
 }
 )";
 
@@ -96,7 +134,31 @@ unsigned int linkProgram(unsigned int vertexShader, unsigned int fragmentShader)
 }
 
 /**
- * @brief Sube una malla 2D (posiciones vec2) a un VAO/VBO nuevos.
+ * @brief Compila y enlaza un par de shaders, liberando los shaders intermedios.
+ * @param vertexSrc   Código GLSL del vertex shader.
+ * @param fragmentSrc Código GLSL del fragment shader.
+ * @return ID del shader program, o 0 si algo falló.
+ */
+unsigned int createProgram(const char* vertexSrc, const char* fragmentSrc) {
+    const unsigned int vertexShader = compileShader(vertexSrc, GL_VERTEX_SHADER);
+    if (vertexShader == 0) {
+        return 0;
+    }
+
+    const unsigned int fragmentShader = compileShader(fragmentSrc, GL_FRAGMENT_SHADER);
+    if (fragmentShader == 0) {
+        glDeleteShader(vertexShader);
+        return 0;
+    }
+
+    const unsigned int program = linkProgram(vertexShader, fragmentShader);
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+    return program;
+}
+
+/**
+ * @brief Sube una malla 2D estática (posiciones vec2) a un VAO/VBO nuevos.
  * @param vertices Vértices intercalados (x, y, x, y, ...).
  * @param vao      VAO de salida.
  * @param vbo      VBO de salida.
@@ -138,33 +200,73 @@ std::vector<float> makeUnitCircleVertices() {
     return vertices;
 }
 
+/**
+ * @brief Convierte una lista de puntos de estela en una cinta (triangle strip).
+ * @param points Puntos ordenados del más antiguo al más reciente.
+ * @return Vértices intercalados (x, y, alpha), dos por punto.
+ *
+ * Para cada punto se calcula la dirección de avance (diferencia central, salvo
+ * en los extremos), su normal y los dos bordes de la cinta. Los puntos
+ * degenerados (dirección casi nula) se omiten.
+ */
+std::vector<float> buildTrailVertices(const std::vector<Renderer::TrailPoint>& points) {
+    std::vector<float> vertices;
+    if (points.size() < 2) {
+        return vertices;
+    }
+
+    vertices.reserve(points.size() * 2 * kTrailFloatsPerVertex);
+
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        glm::vec2 direction{0.0f};
+        if (i == 0) {
+            direction = points[1].position - points[0].position;
+        } else if (i + 1 == points.size()) {
+            direction = points[i].position - points[i - 1].position;
+        } else {
+            direction = points[i + 1].position - points[i - 1].position;
+        }
+
+        const float directionLength = glm::length(direction);
+        if (directionLength < kMinDirectionLength) {
+            continue;
+        }
+
+        const glm::vec2 normal = glm::vec2(-direction.y, direction.x) / directionLength;
+        const float halfWidth = points[i].width * 0.5f;
+        const glm::vec2 left = points[i].position + normal * halfWidth;
+        const glm::vec2 right = points[i].position - normal * halfWidth;
+
+        vertices.push_back(left.x);
+        vertices.push_back(left.y);
+        vertices.push_back(points[i].alpha);
+
+        vertices.push_back(right.x);
+        vertices.push_back(right.y);
+        vertices.push_back(points[i].alpha);
+    }
+
+    return vertices;
+}
+
 }  // namespace
 
 bool Renderer::init(int screenWidth, int screenHeight) {
-    if (!buildShaderProgram()) {
+    if (!buildShaderProgram() || !buildTrailProgram()) {
         return false;
     }
+
     uploadProjection(screenWidth, screenHeight);
+
+    // La estela necesita blending para desvanecerse; las figuras opacas no cambian.
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     return setupGeometry();
 }
 
 bool Renderer::buildShaderProgram() {
-    const unsigned int vertexShader = compileShader(kVertexSrc, GL_VERTEX_SHADER);
-    if (vertexShader == 0) {
-        return false;
-    }
-
-    const unsigned int fragmentShader = compileShader(kFragmentSrc, GL_FRAGMENT_SHADER);
-    if (fragmentShader == 0) {
-        glDeleteShader(vertexShader);
-        return false;
-    }
-
-    m_shaderProgram = linkProgram(vertexShader, fragmentShader);
-
-    // Los shaders ya están enlazados: se pueden liberar en cualquier caso.
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
+    m_shaderProgram = createProgram(kVertexSrc, kFragmentSrc);
     if (m_shaderProgram == 0) {
         return false;
     }
@@ -172,6 +274,17 @@ bool Renderer::buildShaderProgram() {
     m_projectionLocation = glGetUniformLocation(m_shaderProgram, "uProjection");
     m_modelLocation = glGetUniformLocation(m_shaderProgram, "uModel");
     m_colorLocation = glGetUniformLocation(m_shaderProgram, "uColor");
+    return true;
+}
+
+bool Renderer::buildTrailProgram() {
+    m_trailProgram = createProgram(kTrailVertexSrc, kTrailFragmentSrc);
+    if (m_trailProgram == 0) {
+        return false;
+    }
+
+    m_trailProjectionLocation = glGetUniformLocation(m_trailProgram, "uProjection");
+    m_trailColorLocation = glGetUniformLocation(m_trailProgram, "uColor");
     return true;
 }
 
@@ -184,6 +297,9 @@ void Renderer::uploadProjection(int screenWidth, int screenHeight) {
 
     glUseProgram(m_shaderProgram);
     glUniformMatrix4fv(m_projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
+
+    glUseProgram(m_trailProgram);
+    glUniformMatrix4fv(m_trailProjectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
 }
 
 bool Renderer::setupGeometry() {
@@ -200,7 +316,25 @@ bool Renderer::setupGeometry() {
     };
     uploadMesh(quadVertices, m_rectVAO, m_rectVBO);
 
-    return m_circleVAO != 0 && m_circleVBO != 0 && m_rectVAO != 0 && m_rectVBO != 0;
+    // Malla dinámica de la estela: posición (vec2) + alpha (float) por vértice.
+    glGenVertexArrays(1, &m_trailVAO);
+    glGenBuffers(1, &m_trailVBO);
+
+    glBindVertexArray(m_trailVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_trailVBO);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+
+    const auto stride = static_cast<GLsizei>(kTrailFloatsPerVertex * sizeof(float));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, nullptr);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<const void*>(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
+
+    return m_circleVAO != 0 && m_circleVBO != 0
+        && m_rectVAO != 0 && m_rectVBO != 0
+        && m_trailVAO != 0 && m_trailVBO != 0;
 }
 
 void Renderer::drawCircle(const glm::vec2& center, float radius, const glm::vec3& color) {
@@ -217,6 +351,24 @@ void Renderer::drawRect(const glm::vec2& center, const glm::vec2& size,
     drawPrimitive(m_rectVAO, 4, GL_TRIANGLE_STRIP, model, color);
 }
 
+void Renderer::drawTrail(const std::vector<TrailPoint>& points, const glm::vec4& color) {
+    const std::vector<float> vertices = buildTrailVertices(points);
+    const auto vertexCount = static_cast<int>(vertices.size() / kTrailFloatsPerVertex);
+    if (vertexCount < 4) {  // hacen falta al menos dos puntos para una cinta
+        return;
+    }
+
+    glUseProgram(m_trailProgram);
+    glUniform4fv(m_trailColorLocation, 1, glm::value_ptr(color));
+
+    glBindVertexArray(m_trailVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_trailVBO);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                 vertices.data(), GL_DYNAMIC_DRAW);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, vertexCount);
+    glBindVertexArray(0);
+}
+
 void Renderer::drawPrimitive(unsigned int vao, unsigned int vertexCount, unsigned int mode,
                              const glm::mat4& model, const glm::vec3& color) {
     glUseProgram(m_shaderProgram);
@@ -229,6 +381,14 @@ void Renderer::drawPrimitive(unsigned int vao, unsigned int vertexCount, unsigne
 }
 
 void Renderer::cleanup() {
+    if (m_trailVBO != 0) {
+        glDeleteBuffers(1, &m_trailVBO);
+        m_trailVBO = 0;
+    }
+    if (m_trailVAO != 0) {
+        glDeleteVertexArrays(1, &m_trailVAO);
+        m_trailVAO = 0;
+    }
     if (m_circleVBO != 0) {
         glDeleteBuffers(1, &m_circleVBO);
         m_circleVBO = 0;
@@ -248,5 +408,9 @@ void Renderer::cleanup() {
     if (m_shaderProgram != 0) {
         glDeleteProgram(m_shaderProgram);
         m_shaderProgram = 0;
+    }
+    if (m_trailProgram != 0) {
+        glDeleteProgram(m_trailProgram);
+        m_trailProgram = 0;
     }
 }
