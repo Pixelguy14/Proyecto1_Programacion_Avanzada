@@ -1,36 +1,68 @@
 #include "core/Window.h"
 #include "graphics/Renderer.h"
 
+#include <iostream>
+
 /**
  * @file main.cpp
  * @brief Punto de entrada del juego Fruit Ninja.
  *
- * Crea la ventana, inicializa el renderer y ejecuta el bucle principal
- * calculando el delta‑time entre frames.
+ * ## Jerarquía
+ *   main()
+ *     ├── Window    → ventana, contexto OpenGL, tiempo y eventos
+ *     ├── Renderer  → shaders, geometría y dibujado
+ *     └── runGameLoop() → ciclo: eventos → update → render → present
  */
-int main() {
-    // Crear ventana de 1920x1080
-    Window window(1920, 1080, "Fruit Ninja");
-    if (!window.init()) {
-        return -1;
-    }
 
-    // Inicializar renderer (carga shaders, VAO, etc.)
-    Renderer renderer;
-    renderer.init();
+namespace {
 
-    // Bucle principal
+/// Resolución lógica del juego (coincide con la proyección ortográfica).
+constexpr int kWindowWidth = 1920;
+constexpr int kWindowHeight = 1080;
+constexpr const char* kWindowTitle = "Fruit Ninja";
+
+/**
+ * @brief Ejecuta el game loop hasta que el usuario cierre la ventana.
+ * @param window   Ventana ya inicializada.
+ * @param renderer Renderer ya inicializado.
+ *
+ * En el Sprint 0 solo se limpia la pantalla y se dibuja el rectángulo.
+ * A partir del Sprint 1, aquí se actualizarán las entidades con dt.
+ */
+void runGameLoop(Window& window, Renderer& renderer) {
     while (!window.shouldClose()) {
-        // Calcular delta time
-        float dt = window.updateDeltaTime();
+        window.pollEvents();
 
-        // Renderizado
+        [[maybe_unused]] const float dt = window.updateDeltaTime();
+
         window.clear();
         renderer.render();
         window.swapBuffers();
     }
+}
 
-    // Limpieza
+}  // namespace
+
+/**
+ * @brief Crea la ventana y el renderer, ejecuta el juego y libera los recursos.
+ * @return 0 si el juego terminó correctamente; 1 si falló la inicialización.
+ */
+int main() {
+    Window window(kWindowWidth, kWindowHeight, kWindowTitle);
+    if (!window.init()) {
+        std::cerr << "[main] No se pudo inicializar la ventana." << std::endl;
+        return 1;
+    }
+
+    Renderer renderer;
+    if (!renderer.init()) {
+        std::cerr << "[main] No se pudo inicializar el renderer." << std::endl;
+        window.terminate();
+        return 1;
+    }
+
+    runGameLoop(window, renderer);
+
     renderer.cleanup();
     window.terminate();
     return 0;

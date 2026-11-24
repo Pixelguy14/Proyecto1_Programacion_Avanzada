@@ -1,39 +1,192 @@
-# Proyecto 1 - Programación Avanzada - Clon de Fruit Ninja usando C++ OpenGL
+# Proyecto 1 — Programación Avanzada
 
-## Prerrequisitos
-- Compilador C++ con soporte **C++17** (p.ej., `g++` ≥ 7 o `clang`).
-- **CMake** ≥ 3.15.
-- **Git** (para descargar los sub‑módulos).
+Clon de **Fruit Ninja** en C++17 con OpenGL 3.3 core, basado en *The Nature of Code*
+(cap. 2.6) y el trackeo del mouse.
 
-## Configuración del repositorio
+Estado actual: **Sprint 0 terminado** (ventana + bucle con delta time + rectángulo con
+proyección ortográfica). Ver [`process.md`](process.md) para el detalle de cada sprint.
+
+---
+
+## 1. Requisitos
+
+### Comunes a todos los sistemas
+| Herramienta | Versión mínima | Para qué |
+|---|---|---|
+| Compilador C++17 | GCC 9+, Clang 10+ o MSVC 2019+ | Compilar el juego |
+| CMake | **3.16** | Sistema de compilación (GLFW lo exige) |
+| Git | cualquiera reciente | Descargar los submódulos |
+| Python | 3.8+ | GLAD genera el loader de OpenGL al compilar |
+| **Jinja2** (paquete de Python) | 2.7 – 3.x | Dependencia de GLAD (`ModuleNotFoundError` si falta) |
+| GPU y driver | **OpenGL 3.3 core** | Requisito de los shaders `#version 330` |
+
+> GLAD2 **no** es una librería precompilada: se ejecuta como generador de Python
+> durante la configuración/compilación. Por eso Python y Jinja2 son obligatorios.
+
+> **GLFW, GLAD y GLM no se instalan con el gestor de paquetes.** Están versionados como
+> submódulos de Git en `external/`, así que todos los que compilen usan exactamente las
+> mismas versiones. No instales las versiones del sistema: podrían entrar en conflicto
+> con las cabeceras del proyecto. Solo se necesita conexión a Internet para el primer
+> clonado de los submódulos; compilar después funciona sin red.
+
+### Linux (Debian / Ubuntu / Mint)
 ```bash
-# Clonar el repositorio
-git clone <url-del-repo> FruitNinja
-cd FruitNinja
+sudo apt update
+sudo apt install build-essential cmake git pkg-config python3 python3-venv \
+                 libgl1-mesa-dev libwayland-dev libxkbcommon-dev xorg-dev
+# opcional, para comprobar la versión de OpenGL:
+sudo apt install mesa-utils
+```
 
-# Inicializar los sub‑módulos (GLFW, GLAD, GLM)
+### Linux (Fedora / RHEL)
+```bash
+sudo dnf install gcc-c++ make cmake git pkgconf-pkg-config python3 python3-pip \
+                 mesa-libGL-devel wayland-devel libxkbcommon-devel \
+                 libXcursor-devel libXi-devel libXinerama-devel libXrandr-devel
+```
+
+### Linux (Arch / Manjaro)
+```bash
+sudo pacman -S --needed base-devel cmake git pkgconf python \
+                       mesa wayland libxkbcommon \
+                       libxcursor libxi libxinerama libxrandr
+```
+
+### macOS
+```bash
+xcode-select --install   # compilador (Clang) y herramientas
+brew install cmake python
+```
+No hay que instalar OpenGL: macOS incluye `OpenGL.framework`. Apple lo marcó como
+obsoleto, pero sigue disponible el perfil 3.3 core que usa el proyecto.
+Funciona tanto en Intel como en Apple Silicon.
+
+### Windows
+1. **Visual Studio 2022** con la carga de trabajo *Desarrollo para escritorio con C++*
+   (incluye MSVC y el Windows SDK). Alternativa: **MinGW-w64**.
+2. **CMake** (https://cmake.org/download/ o `winget install Kitware.CMake`).
+3. **Python 3** (https://www.python.org/downloads/ o `winget install Python.Python.3.12`)
+   marcando *Add python.exe to PATH*.
+4. OpenGL `opengl32` viene con el Windows SDK.
+
+---
+
+## 2. Dependencias de Python (Jinja2)
+
+Se recomienda un **entorno virtual** para no depender del Python del sistema
+(Ubuntu/Debian y Homebrew bloquean `pip install` global por PEP 668):
+
+```bash
+# Linux / macOS
+python3 -m venv .venv
+source .venv/bin/activate
+# Windows (PowerShell)
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+python -m pip install "jinja2>=2.7,<4"
+```
+
+Configura y compila **con el entorno virtual activo**, para que CMake encuentre ese
+intérprete de Python.
+
+Alternativa sin venv (instala Jinja2 con el gestor del sistema):
+```bash
+sudo apt install python3-jinja2     # Debian/Ubuntu
+sudo dnf install python3-jinja2     # Fedora
+sudo pacman -S python-jinja2        # Arch
+```
+
+---
+
+## 3. Obtener el código
+
+```bash
+git clone --recurse-submodules <URL-del-repositorio>
+cd Proyecto1_Programacion_Avanzada
+```
+
+Si ya habías clonado el repositorio sin los submódulos:
+```bash
 git submodule update --init --recursive
 ```
 
-## Compilación
+Los submódulos son GLFW, GLAD y GLM (ver `.gitmodules`); sin ellos CMake no puede
+configurar el proyecto.
+
+---
+
+## 4. Compilación
+
+El proyecto usa siempre un directorio aparte (`build/`).
+
 ```bash
-# Crear el directorio de compilación (out-of-source build)
-mkdir -p build
-cd build
-
-# Configurar el proyecto desde dentro de build/
-cmake ..
-
-# Compilar
-make -j$(nproc)
+cmake -S . -B build
+cmake --build build --parallel
 ```
-El binario resultante se encontrará en `build/bin/FruitNinja`.
 
-> **Nota:** CMake **rechazará** correr desde la raíz del proyecto (`cmake .`).
-> Siempre usa el directorio `build/` para mantener limpia la raíz.
+Estos dos comandos son portables (Linux, macOS y Windows, cualquier generador).
+Variantes útiles:
 
-## Ejecución
 ```bash
-./bin/FruitNinja
+# Build de depuración con símbolos
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel
+
+# Reconfigurar desde cero si algo quedó en mal estado
+rm -rf build            # Windows: rmdir /s /q build
 ```
-Se abrirá una ventana de **1920 × 1080** con un fondo gris oscuro y un rectángulo rojo centrado.
+
+**Windows con Visual Studio** (generador multi-configuración):
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release --parallel
+```
+
+**Windows con MinGW-w64**:
+```powershell
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build --parallel
+```
+
+---
+
+## 5. Ejecución
+
+| Sistema | Comando |
+|---|---|
+| Linux / macOS | `./build/bin/FruitNinja` |
+| Windows (MSVC) | `.\build\bin\Release\FruitNinja.exe` |
+| Windows (MinGW / Ninja) | `.\build\bin\FruitNinja.exe` |
+
+Al ejecutarse debe abrirse una ventana de **1920×1080** titulada *Fruit Ninja* con un
+**rectángulo rojo** centrado sobre fondo gris oscuro. Ese es el entregable del Sprint 0.
+
+---
+
+## 6. Problemas comunes
+
+| Síntoma | Causa y solución |
+|---|---|
+| `ModuleNotFoundError: No module named 'jinja2'` | Jinja2 no está en el Python que usa CMake. Activa el venv, instálalo y reconfigura: `rm -rf build && cmake -S . -B build`. |
+| CMake encuentra otro Python (p. ej. el de Visual Studio) | Fuerza el intérprete: `cmake -S . -B build -DPython_EXECUTABLE=/ruta/a/python` (Windows: `-DPython_EXECUTABLE=C:\Python312\python.exe`). |
+| `CMake 3.16 or higher is required` | Actualiza CMake; GLFW 3.5 no acepta versiones anteriores. |
+| `[ERROR] In-source builds no están permitidos` | Estás ejecutando `cmake .` en la raíz. Usa `cmake -S . -B build`. |
+| `Failed to create GLFW window` en Linux | No hay servidor gráfico o driver OpenGL: comprueba `echo $DISPLAY` / `$WAYLAND_DISPLAY` y que `glxinfo \| grep "OpenGL version"` muestre ≥ 3.3. |
+| `Failed to initialize GLAD` | El contexto OpenGL no se creó correctamente (driver/entorno sin aceleración). |
+| Solo funciona en local, falla por SSH | Necesita una sesión gráfica real o *X11 forwarding* con GLX; no funciona en terminal sin display. |
+| El ejecutable no aparece donde se indica | Usa `cmake --build build --verbose` o busca con `find build -name FruitNinja*` (en Windows, `dir /s build\FruitNinja.exe`). |
+| `GLFW/glfw3.h: No such file or directory` | Faltan los submódulos: `git submodule update --init --recursive`. |
+| Se cambió de Python/venv y el build falla | `rm -rf build` y vuelve a configurar con el entorno correcto. |
+
+---
+
+## 7. Documentación
+
+- [`documentacion1.md`](documentacion1.md): alcance, sprints y entregables.
+- [`process.md`](process.md): bitácora, decisiones de diseño y convenciones.
+- El código de `src/` está documentado con comentarios **Doxygen**.
+- licencia: [MIT](LICENSE)
+
+---

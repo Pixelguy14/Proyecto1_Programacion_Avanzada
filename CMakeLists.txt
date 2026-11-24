@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.15)
+# GLFW 3.5 exige CMake >= 3.16, aunque el resto del proyecto funcione con menos.
+cmake_minimum_required(VERSION 3.16)
 
 # ------------------------------------------------------------
 # Guardia contra in-source builds
@@ -7,8 +8,8 @@ cmake_minimum_required(VERSION 3.15)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR
         "\n[ERROR] In-source builds no están permitidos.\n"
-        "Por favor crea un directorio separado:\n"
-        "  mkdir build && cd build && cmake ..\n"
+        "Usa un directorio separado, por ejemplo:\n"
+        "  cmake -S . -B build && cmake --build build --parallel\n"
     )
 endif()
 
@@ -40,7 +41,9 @@ find_package(OpenGL REQUIRED)
 # ------------------------------------------------------------
 # Fuentes del proyecto
 # ------------------------------------------------------------
-file(GLOB_RECURSE SRC_FILES
+# CONFIGURE_DEPENDS hace que CMake vuelva a buscar fuentes nuevas al compilar,
+# evitando reconfigurar a mano cada vez que se añade un .cpp en un sprint.
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
     "src/*.cpp"
     "src/*.c"
 )

@@ -19,6 +19,10 @@ bin/
 .vscode/
 .idea/
 
+# Entornos virtuales de Python (Jinja2 para GLAD)
+.venv/
+venv/
+
 # Objetos y binarios compilados
 *.o
 *.obj

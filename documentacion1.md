@@ -38,7 +38,7 @@ Sprint 0: Cimientos y OpenGL (El "Hola Mundo")
 
         Implementar la matriz de proyección ortográfica (para que las coordenadas de pantalla sean fáciles de manejar, ej. 0 a 1920 en X).
 
-    Entregable: Ventana abierta con un rectángulo estático.
+    Entregable: Ventana abierta con un rectángulo estático. (Sprint 0 terminado)
 
 Sprint 1: Física y Movimiento (Cap. 2.6 de Nature of Code)
 
@@ -96,9 +96,9 @@ Sprint 4: Game Loop, UI y Partículas
 
         Implementar el sistema de partículas (cubitos de "jugo" saliendo al cortar una fruta).
 
-        Añadir lógica de juego: Puntos por fruta cortada, vidas (se pierde si una fruta cae al suelo sin cortar).
+        Añadir lógica de juego: Puntos por fruta cortada, vidas (se pierde si tres frutas cae al suelo sin cortar).
 
-        Implementar una máquina de estados simple (Menú -> Jugando -> Game Over).
+        Implementar una máquina de estados simple (Menú -> Jugando -> Game Over) y pausa
 
         (Opcional) Renderizar texto básico usando una librería como stb_truetype para mostrar el puntaje.
 
@@ -110,13 +110,14 @@ Sprint 5: Pulido y "Juice" (Game Feel)
 
     Tareas:
 
-        Añadir texturas (sprites de frutas en lugar de círculos de color).
-
-        Efectos de sonido (corte, bomba).
+        Efectos de sonido (corte, bomba). https://freesound.org/
 
         Screen shake (temblor de pantalla al cortar o explotar una bomba).
 
         Ajuste fino del tamaño del radio de corte y la velocidad de las frutas.
+
+        Frutas siendo figuras 3D que giren y de esta manera representar el nucleo y la cascara.
+        Figuras 3D que representen melones, manzanas, naranjas, limones, platanos, vértices e índices (VBO / EBO), puedes partir de primitivas básicas con pocas subdivisiones (por ejemplo, sectors = 8 a 12 y stacks = 6 a 8) y normales planas (flat shading) por 
 
     Entregable: El juego listo para presumir.
 
@@ -128,6 +129,24 @@ Ajuste de Sprints: Fruit Ninja (Enfoque en OOP, STL y SIMD)
 - Sprint 2: La Espada y Sobrecarga de OperadoresCapturar el mouse y guardar el historial de posiciones.Integración de clase: Implementa una clase Vector2D mediante el uso de plantillas (template <class T>) para manejar coordenadas.   Aplica sobrecarga de operadores (+, -, =) en tu clase de vectores para calcular las distancias y deltas de movimiento de la espada sin depender exclusivamente de GLM.   
 - Sprint 3: Colisiones y Máscaras a Nivel de BitsMatemática de intersección segmento-círculo para el corte y generación de instancias de FruitHalf.Integración de clase: Implementa el sistema de estados de la fruta (ej. activa, cortada, bomba) utilizando operaciones a nivel de bits (Bitwise &, |, ^) sobre un registro de estado o banderas para determinar de forma eficiente si interactúan con la espada.   
 - Sprint 4: Sistema de Partículas y Paralelismo de Datos (AVX)Añadir la lógica central (vidas, puntaje).Integración de clase: Este es el núcleo de bajo nivel. Implementa el sistema de partículas del "jugo" alineando la memoria de sus posiciones a 32 bytes con _mm_malloc.   Utiliza Intrinsics y registros AVX (__m256, _mm256_add_pd o flotantes) para actualizar la posición y gravedad de 8 partículas simultáneamente por cada ciclo de reloj, aplicando el paralelismo de datos (SIMD) visto en clase.   
-- Sprint 5: Pulido y Gestor de Recursos con Hash (STL)Añadir texturas, screen shake y ajustar el Game Feel.Integración de clase: Implementa un gestor de recursos (Asset Manager) apoyándote en los contenedores de la STL, utilizando <map> o un enfoque similar para crear una tabla Hash que asocie identificadores de texto (strings) con las texturas/sonidos cargados, evitando programar la tabla con colisiones desde cero.
+- Sprint 5: Pulido y Gestor de Recursos con Hash (STL), screen shake y ajustar el Game Feel.Integración de clase: Implementa un gestor de recursos (Asset Manager) apoyándote en los contenedores de la STL, utilizando <map> o un enfoque similar para crear una tabla Hash que asocie identificadores de texto (strings) con las texturas/sonidos cargados, evitando programar la tabla con colisiones desde cero.
 
 Para cada una de las tareas necesarias, se deberá de esperar al terminar cada tarea el commit hecho por el usuario
+
+
+
+Fuentes:
+https://medium.com/@msayef/opengl-mouse-click-detection-on-3d-objects-715d489c784c
+https://simplifycpp.org/articles/a0562/opengl-in-cpp-the-guide-for-3d-graphics-programming/
+https://community.khronos.org/t/slicing-3d-model/53609
+https://github.com/ifilot/opengl-cpp-course/tree/master/lesson01
+https://community.khronos.org/t/3d-object-slicing-algorithm/63035/2
+https://github.com/ifilot/opengl-cpp-course/blob/master/lesson04/README.md
+https://www3.ntu.edu.sg/home/ehchua/programming/opengl/CG_Examples.html
+https://learnopengl.com/In-Practice/2D-Game/Audio
+
+Cap. 2.6 de Nature of Code (*The Nature of Code* – Daniel Shiffman.)
+Cap. 1 (Vectores y sistemas de coordenadas)
+
+
+Todos los archivos de src/ tienen Doxygen: @file, @brief, @param, @return, y cada helper privado está documentado.
