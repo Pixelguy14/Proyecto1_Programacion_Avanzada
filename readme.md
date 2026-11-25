@@ -3,9 +3,10 @@
 Clon de **Fruit Ninja** en C++17 con OpenGL 3.3 core, basado en *The Nature of Code*
 (cap. 2.6) y el trackeo del mouse.
 
-Estado actual: **Sprint 3 terminado** (colisión segmento-círculo, estados de fruta con
-banderas de bits, corte y mitades con física propia). Ver
-[`process.md`](process.md) para el detalle de cada sprint.
+Estado actual: **Sprint 4 (parte 1) terminado** — máquina de estados, cuatro fondos
+con crossfade, tipografía FreeType (Zen Antique), HUD de puntos/vidas y pantallas de
+menú, pausa y game over. Las partículas de jugo y la optimización con AVX quedan para
+la segunda parte del sprint. Ver [`process.md`](process.md) para el detalle.
 
 ---
 
@@ -19,10 +20,15 @@ banderas de bits, corte y mitades con física propia). Ver
 | Git | cualquiera reciente | Descargar los submódulos |
 | Python | 3.8+ | GLAD genera el loader de OpenGL al compilar |
 | **Jinja2** (paquete de Python) | 2.7 – 3.x | Dependencia de GLAD (`ModuleNotFoundError` si falta) |
+| **FreeType** | 2.8+ | Rasterizar la tipografía del HUD (Sprint 4) |
 | GPU y driver | **OpenGL 3.3 core** | Requisito de los shaders `#version 330` |
 
 > GLAD2 **no** es una librería precompilada: se ejecuta como generador de Python
 > durante la configuración/compilación. Por eso Python y Jinja2 son obligatorios.
+
+> **FreeType sí se instala con el gestor de paquetes** (o se obtiene con Homebrew /
+> vcpkg en macOS y Windows). CMake lo busca con `find_package(Freetype REQUIRED)`.
+> `stb_image` está incluido en `external/stb/` y no requiere instalación.
 
 > **GLFW, GLAD y GLM no se instalan con el gestor de paquetes.** Están versionados como
 > submódulos de Git en `external/`, así que todos los que compilen usan exactamente las
@@ -34,7 +40,8 @@ banderas de bits, corte y mitades con física propia). Ver
 ```bash
 sudo apt update
 sudo apt install build-essential cmake git pkg-config python3 python3-venv \
-                 libgl1-mesa-dev libwayland-dev libxkbcommon-dev xorg-dev
+                 libgl1-mesa-dev libwayland-dev libxkbcommon-dev xorg-dev \
+                 libfreetype-dev
 # opcional, para comprobar la versión de OpenGL:
 sudo apt install mesa-utils
 ```
@@ -43,20 +50,21 @@ sudo apt install mesa-utils
 ```bash
 sudo dnf install gcc-c++ make cmake git pkgconf-pkg-config python3 python3-pip \
                  mesa-libGL-devel wayland-devel libxkbcommon-devel \
-                 libXcursor-devel libXi-devel libXinerama-devel libXrandr-devel
+                 libXcursor-devel libXi-devel libXinerama-devel libXrandr-devel \
+                 freetype-devel
 ```
 
 ### Linux (Arch / Manjaro)
 ```bash
 sudo pacman -S --needed base-devel cmake git pkgconf python \
                        mesa wayland libxkbcommon \
-                       libxcursor libxi libxinerama libxrandr
+                       libxcursor libxi libxinerama libxrandr freetype2
 ```
 
 ### macOS
 ```bash
 xcode-select --install   # compilador (Clang) y herramientas
-brew install cmake python
+brew install cmake python freetype
 ```
 No hay que instalar OpenGL: macOS incluye `OpenGL.framework`. Apple lo marcó como
 obsoleto, pero sigue disponible el perfil 3.3 core que usa el proyecto.
@@ -69,6 +77,10 @@ Funciona tanto en Intel como en Apple Silicon.
 3. **Python 3** (https://www.python.org/downloads/ o `winget install Python.Python.3.12`)
    marcando *Add python.exe to PATH*.
 4. OpenGL `opengl32` viene con el Windows SDK.
+5. **FreeType** para el texto del HUD: instálalo con **vcpkg**
+   (`vcpkg install freetype`) y configura CMake con
+   `-DCMAKE_TOOLCHAIN_FILE=<ruta>/vcpkg.cmake`, o descarga un build precompilado
+   y define `CMAKE_PREFIX_PATH`.
 
 ---
 
@@ -161,14 +173,31 @@ cmake --build build --parallel
 | Windows (MSVC) | `.\build\bin\Release\FruitNinja.exe` |
 | Windows (MinGW / Ninja) | `.\build\bin\FruitNinja.exe` |
 
-Al ejecutarse debe abrirse una ventana de **1920×1080** titulada *Fruit Ninja* con
-**frutas de colores** que salen disparadas desde debajo de la pantalla, suben, giran y
-caen por gravedad.
+Al ejecutarse debe abrirse una ventana de **1920×1080** titulada *Fruit Ninja* con el
+menú principal sobre el fondo del dojo exterior. La partida usa el fondo de la
+habitación, la pausa el interior del dojo y el game over la guardería; cada cambio de
+estado hace un **crossfade** de 0.8 s.
 
-**Controles (Sprint 3):** mueve el mouse por la ventana para dibujar la estela de la
-espada. El cursor del sistema se oculta y la estela se desvanece al detener el mouse.
-Si el recorrido del mouse atraviesa una fruta, esta desaparece y salen **dos mitades**
-que vuelan en direcciones opuestas, giran y caen por gravedad.
+**Controles (Sprint 4):**
+
+| Tecla | Menú | Jugando | Pausa | Game Over |
+|---|---|---|---|---|
+| `Enter` / `Espacio` | Jugar | — | — | Jugar de nuevo |
+| `Esc` | Salir | Pausar | Continuar | Volver al menú |
+| `P` | — | Pausar | Continuar | Volver al menú |
+| `R` | — | — | Reiniciar | Jugar de nuevo |
+| `M` | — | — | Volver al menú | — |
+
+Mueve el mouse por la ventana para dibujar la estela de la espada. El cursor del
+sistema se oculta y la estela se desvanece al detener el mouse. Si el recorrido
+atraviesa una fruta, esta se parte en **dos mitades** con física propia. Cada fruta
+cortada suma un punto; cada fruta que cae sin cortar resta una vida. Con **3 vidas**
+iniciales, al llegar a cero aparece la pantalla de game over.
+
+**Recursos incluidos:** los cuatro PNG de `src/graphics/assets/` y la tipografía
+`fonts/ZenAntique-Regular.ttf` (SIL Open Font License 1.1, ver
+`src/graphics/assets/fonts/OFL.txt`). `AssetPaths` los encuentra aunque el ejecutable
+se lance desde `build/` o `build/bin/`.
 
 ---
 
@@ -185,6 +214,8 @@ que vuelan en direcciones opuestas, giran y caen por gravedad.
 | Solo funciona en local, falla por SSH | Necesita una sesión gráfica real o *X11 forwarding* con GLX; no funciona en terminal sin display. |
 | El ejecutable no aparece donde se indica | Usa `cmake --build build --verbose` o busca con `find build -name FruitNinja*` (en Windows, `dir /s build\FruitNinja.exe`). |
 | `GLFW/glfw3.h: No such file or directory` | Faltan los submódulos: `git submodule update --init --recursive`. |
+| `Could not find a package configuration file ... Freetype` | Instala FreeType (`libfreetype-dev`, `freetype-devel`, `freetype2` o `brew install freetype`) y vuelve a configurar CMake. |
+| `[TextRenderer] No se pudo cargar la fuente` | Falta `src/graphics/assets/fonts/ZenAntique-Regular.ttf`; comprueba que el directorio `assets/` esté completo. |
 | Se cambió de Python/venv y el build falla | `rm -rf build` y vuelve a configurar con el entorno correcto. |
 
 ---

@@ -2,7 +2,7 @@
 
 /**
  * @file Input.h
- * @brief Captura de mouse mediante callbacks de GLFW (Sprint 2).
+ * @brief Captura de mouse y teclado mediante callbacks de GLFW (Sprints 2–4).
  *
  * Input es la única pieza que conoce GLFW para eventos de entrada. Traduce las
  * coordenadas de ventana de GLFW (origen arriba-izquierda, Y hacia abajo) al
@@ -23,6 +23,8 @@
 #include <GLFW/glfw3.h>
 
 #include "math/Vector2D.h"
+
+#include <array>
 
 class Input {
 public:
@@ -52,6 +54,23 @@ public:
     /// @return true mientras el botón izquierdo esté presionado.
     bool isMouseDown() const { return m_mouseDown; }
 
+    /**
+     * @brief Limpia las teclas pulsadas en el frame anterior.
+     *
+     * Debe llamarse antes de `Window::pollEvents()`: los callbacks de teclado
+     * del frame actual vuelven a llenar el registro de pulsaciones.
+     */
+    void beginFrame() { m_keysPressed.fill(false); }
+
+    /**
+     * @brief Comprueba si una tecla se pulsó en el frame actual.
+     * @param key Código de tecla de GLFW (por ejemplo `GLFW_KEY_ENTER`).
+     * @return true solo en el frame en que la tecla pasó de suelta a pulsada.
+     */
+    bool wasKeyPressed(int key) const {
+        return key >= 0 && key <= GLFW_KEY_LAST && m_keysPressed[static_cast<std::size_t>(key)];
+    }
+
 private:
     /**
      * @brief Callback de GLFW: actualiza la posición al mover el cursor.
@@ -71,6 +90,17 @@ private:
     static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 
     /**
+     * @brief Callback de GLFW: registra las teclas pulsadas en este frame.
+     * @param window Ventana que emitió el evento.
+     * @param key    Código de tecla de GLFW.
+     * @param action GLFW_PRESS, GLFW_RELEASE o GLFW_REPEAT.
+     *
+     * Solo se registra `GLFW_PRESS`; las repeticiones del sistema no cuentan
+     * como una pulsación nueva.
+     */
+    static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
+    /**
      * @brief Guarda la posición convirtiendo el eje Y al espacio del juego.
      * @param x Coordenada X en píxeles de ventana.
      * @param y Coordenada Y en píxeles de ventana (origen arriba).
@@ -81,4 +111,5 @@ private:
     Vector2D<float> m_mousePosition{};  ///< Posición en coordenadas del juego.
     int m_windowHeight = 0;             ///< Altura lógica para invertir el eje Y.
     bool m_mouseDown = false;           ///< Estado del botón izquierdo.
+    std::array<bool, GLFW_KEY_LAST + 1> m_keysPressed{};  ///< Pulsaciones del frame.
 };

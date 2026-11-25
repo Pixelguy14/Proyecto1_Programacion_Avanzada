@@ -2,7 +2,7 @@
 
 /**
  * @file Input.cpp
- * @brief Implementación de los callbacks de mouse de GLFW.
+ * @brief Implementación de los callbacks de mouse y teclado de GLFW.
  */
 
 bool Input::attach(GLFWwindow* window, int windowHeight) {
@@ -16,6 +16,7 @@ bool Input::attach(GLFWwindow* window, int windowHeight) {
     glfwSetWindowUserPointer(window, this);
     glfwSetCursorPosCallback(window, &Input::cursorPositionCallback);
     glfwSetMouseButtonCallback(window, &Input::mouseButtonCallback);
+    glfwSetKeyCallback(window, &Input::keyCallback);
 
     // La estela de la espada sustituye al cursor del sistema.
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
@@ -43,6 +44,18 @@ void Input::mouseButtonCallback(GLFWwindow* window, int button, int action, int 
     auto* input = static_cast<Input*>(glfwGetWindowUserPointer(window));
     if (input != nullptr) {
         input->m_mouseDown = (action == GLFW_PRESS);
+    }
+}
+
+void Input::keyCallback(GLFWwindow* window, int key, int /*scancode*/, int action,
+                        int /*mods*/) {
+    if (action != GLFW_PRESS || key < 0 || key > GLFW_KEY_LAST) {
+        return;
+    }
+
+    auto* input = static_cast<Input*>(glfwGetWindowUserPointer(window));
+    if (input != nullptr) {
+        input->m_keysPressed[static_cast<std::size_t>(key)] = true;
     }
 }
 

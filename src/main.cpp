@@ -1,37 +1,39 @@
-#include "core/GameObject.h"
 #include "core/Input.h"
 #include "core/Window.h"
-#include "entities/Blade.h"
-#include "entities/Fruit.h"
-// FruitHalf completo: hace falta para convertir unique_ptr<FruitHalf> en
-// unique_ptr<GameObject> al añadir las mitades a la lista polimórfica.
-#include "entities/FruitHalf.h"
-#include "entities/Spawner.h"
+#include "game/GameSession.h"
+#include "game/GameState.h"
+#include "game/GameUi.h"
+#include "graphics/Background.h"
 #include "graphics/Renderer.h"
 
 #include <algorithm>
 #include <iostream>
-#include <memory>
-#include <vector>
 
 /**
  * @file main.cpp
- * @brief Punto de entrada del juego Fruit Ninja.
+ * @brief Punto de entrada y máquina de estados del juego (Sprints 1–4).
  *
  * ## Jerarquía
  *   main()
- *     ├── Window    → ventana, contexto OpenGL, tiempo y eventos
- *     ├── Input     → posición del mouse mediante callbacks GLFW
- *     ├── Renderer  → primitivas de dibujado (círculo, rectángulo, estela)
- *     ├── Spawner   → crea frutas cada cierto tiempo
- *     ├── Blade     → historial del mouse y estela de la espada
- *     └── runGameLoop()
- *           ├── trySpawn()          (añade frutas)
- *           ├── updateObjects()     (física de cada entidad)
- *           ├── blade.update()      (registra el recorrido del mouse)
- *           ├── sliceFruits()       (colisión espada-fruta → mitades)
- *           ├── removeDeadObjects() (libera frutas cortadas o caídas)
- *           └── renderObjects() + blade.render()
+ *     ├── Window        ventana, contexto OpenGL, tiempo y eventos
+ *     ├── Input         mouse y teclado mediante callbacks GLFW
+ *     ├── Renderer      primitivas 2D y texturas
+ *     ├── Background    cuatro escenarios con crossfade
+ *     ├── GameSession   spawner, entidades, espada, puntaje y vidas
+ *     ├── GameUi        tipografía, HUD y overlays
+ *     └── runGameLoop() máquina de estados
+ *
+ * ## Máquina de estados
+ *   Menu ──Enter/Espacio──▶ Playing ──Esc/P──▶ Paused
+ *     ▲                        │                  │
+ *     │                        │ 0 vidas          │ Esc/P
+ *     │                        ▼                  │
+ *     └──────Esc──────────── GameOver ◀──────────┘
+ *                              │
+ *                              └──Enter/Espacio──▶ Playing
+ *
+ * Cada estado tiene su propio fondo (outside, room, inside, nursery) y su
+ * propio conjunto de textos. Solo `Playing` avanza la simulación.
  */
 
 namespace {
@@ -44,117 +46,157 @@ constexpr const char* kWindowTitle = "Fruit Ninja";
 /// Tope de dt para evitar saltos físicos tras pausas o arrastres de ventana.
 constexpr float kMaxFrameTime = 0.05f;
 
-/// Contenedor polimórfico de entidades; posee los objetos con unique_ptr.
-using GameObjectList = std::vector<std::unique_ptr<GameObject>>;
-
 /**
- * @brief Actualiza la física/lógica de todas las entidades.
- * @param objects Lista de entidades.
- * @param dt      Delta time en segundos.
+ * @brief Resultado de procesar la entrada de un estado.
  */
-void updateObjects(GameObjectList& objects, float dt) {
-    for (auto& object : objects) {
-        object->update(dt);
-    }
-}
+struct StateTransition {
+    GameState state;     ///< Estado al que se quiere pasar.
+    bool resetSession;   ///< true si hay que reiniciar la partida al entrar.
+};
 
 /**
- * @brief Elimina de la lista las entidades marcadas como no vivas.
- * @param objects Lista de entidades (se modifica in-place).
+ * @brief Asocia cada estado con su escenario de fondo.
+ * @param state Estado actual de la máquina.
+ * @return Fondo que debe mostrarse.
  *
- * unique_ptr libera la memoria automáticamente al borrar el elemento.
+ * El fondo es cosmético: no altera la dificultad ni la generación de frutas.
  */
-void removeDeadObjects(GameObjectList& objects) {
-    const auto isDead = [](const std::unique_ptr<GameObject>& object) {
-        return !object->isAlive();
-    };
-    objects.erase(std::remove_if(objects.begin(), objects.end(), isDead), objects.end());
+BackgroundScene backgroundFor(GameState state) {
+    switch (state) {
+        case GameState::kMenu:
+            return BackgroundScene::kOutside;
+        case GameState::kPlaying:
+            return BackgroundScene::kRoom;
+        case GameState::kPaused:
+            return BackgroundScene::kInside;
+        case GameState::kGameOver:
+            return BackgroundScene::kNursery;
+    }
+    return BackgroundScene::kOutside;
 }
 
 /**
- * @brief Corta las frutas activas que toque el recorrido reciente de la espada.
- * @param objects Lista de entidades (se le añaden las mitades resultantes).
- * @param blade   Espada con el historial de posiciones ya actualizado.
+ * @brief Traduce las teclas del frame a una transición de estado.
+ * @param current Estado actual.
+ * @param input   Entrada del frame.
+ * @param window  Ventana, para poder solicitar el cierre desde el menú.
+ * @return Estado siguiente y si hay que reiniciar la sesión.
  *
- * Recorre las entidades, identifica las `Fruit` con `dynamic_cast` y consulta
- * `Blade::cutAt()`. Por cada impacto, `Fruit::slice()` devuelve dos mitades que
- * se recogen en un vector temporal y se añaden al final, para no invalidar el
- * iterador mientras se recorre la lista. Las frutas cortadas quedan con la
- * bandera `kSliced` y sin `kActive`, así que `removeDeadObjects()` las libera.
+ * Las teclas de movimiento (Enter/Espacio, Esc/P, R, M) son las mismas en
+ * todos los estados; solo cambia su significado según el estado actual.
  */
-void sliceFruits(GameObjectList& objects, const Blade& blade) {
-    GameObjectList halves;
+StateTransition transitionFor(GameState current, const Input& input, Window& window) {
+    const bool enter = input.wasKeyPressed(GLFW_KEY_ENTER)
+                    || input.wasKeyPressed(GLFW_KEY_KP_ENTER)
+                    || input.wasKeyPressed(GLFW_KEY_SPACE);
+    const bool pauseKey = input.wasKeyPressed(GLFW_KEY_ESCAPE)
+                       || input.wasKeyPressed(GLFW_KEY_P);
+    const bool restartKey = input.wasKeyPressed(GLFW_KEY_R);
+    const bool menuKey = input.wasKeyPressed(GLFW_KEY_M);
 
-    for (auto& object : objects) {
-        auto* fruit = dynamic_cast<Fruit*>(object.get());
-        if (fruit == nullptr
-            || !fruit->hasFlag(FruitFlag::kActive)
-            || fruit->hasFlag(FruitFlag::kBomb)) {
-            continue;
-        }
+    switch (current) {
+        case GameState::kMenu:
+            if (enter) {
+                return {GameState::kPlaying, true};
+            }
+            if (input.wasKeyPressed(GLFW_KEY_ESCAPE)) {
+                window.requestClose();
+            }
+            break;
 
-        const Blade::CutResult cut = blade.cutAt(fruit->position(), fruit->radius());
-        if (!cut.hit) {
-            continue;
-        }
+        case GameState::kPlaying:
+            if (pauseKey) {
+                return {GameState::kPaused, false};
+            }
+            break;
 
-        auto [first, second] = fruit->slice(cut.direction);
-        if (first) {
-            halves.push_back(std::move(first));
-        }
-        if (second) {
-            halves.push_back(std::move(second));
-        }
+        case GameState::kPaused:
+            if (pauseKey) {
+                return {GameState::kPlaying, false};
+            }
+            if (restartKey) {
+                return {GameState::kPlaying, true};
+            }
+            if (menuKey) {
+                return {GameState::kMenu, false};
+            }
+            break;
+
+        case GameState::kGameOver:
+            if (enter || restartKey) {
+                return {GameState::kPlaying, true};
+            }
+            if (pauseKey) {
+                return {GameState::kMenu, false};
+            }
+            break;
     }
 
-    for (auto& half : halves) {
-        objects.push_back(std::move(half));
-    }
+    return {current, false};
 }
 
 /**
- * @brief Dibuja todas las entidades.
- * @param objects  Lista de entidades.
- * @param renderer Renderer compartido.
+ * @brief Ejecuta el bucle principal hasta que el usuario cierre la ventana.
+ * @param window     Ventana ya inicializada.
+ * @param renderer   Renderer ya inicializado.
+ * @param input      Entrada registrada sobre la ventana.
+ * @param background Fondos ya cargados.
+ * @param session    Sesión de juego reutilizable entre partidas.
+ * @param ui         Textos y overlays ya inicializados.
  */
-void renderObjects(const GameObjectList& objects, Renderer& renderer) {
-    for (const auto& object : objects) {
-        object->render(renderer);
-    }
-}
-
-/**
- * @brief Ejecuta el game loop hasta que el usuario cierre la ventana.
- * @param window   Ventana ya inicializada.
- * @param renderer Renderer ya inicializado.
- * @param spawner  Spawner ligado a la resolución de la ventana.
- * @param input    Entrada ya registrada sobre la ventana.
- *
- * La espada se dibuja al final para que su estela quede por encima de las frutas.
- */
-void runGameLoop(Window& window, Renderer& renderer, Spawner& spawner, const Input& input) {
-    Blade blade(input);
-
-    GameObjectList objects;
-    objects.reserve(64);  // capacidad inicial para evitar reallocaciones frecuentes
+void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& background,
+                 GameSession& session, GameUi& ui) {
+    GameState state = GameState::kMenu;
+    background.setScene(backgroundFor(state), true);
 
     while (!window.shouldClose()) {
+        input.beginFrame();
         window.pollEvents();
 
         const float dt = std::min(window.updateDeltaTime(), kMaxFrameTime);
 
-        if (auto fruit = spawner.trySpawn(dt)) {
-            objects.push_back(std::move(fruit));
+        const StateTransition transition = transitionFor(state, input, window);
+        if (transition.state != state) {
+            if (transition.resetSession) {
+                session.reset();
+            }
+            state = transition.state;
         }
 
-        updateObjects(objects, dt);
-        blade.update(dt);
-        sliceFruits(objects, blade);
-        removeDeadObjects(objects);
+        if (state == GameState::kPlaying) {
+            session.update(dt);
+            if (session.isGameOver()) {
+                state = GameState::kGameOver;
+            }
+        }
+
+        background.setScene(backgroundFor(state));
+        background.update(dt);
 
         window.clear();
-        renderObjects(objects, renderer);
-        blade.render(renderer);
+        background.render(renderer);
+
+        // En pausa y game over se congela la escena, pero se sigue dibujando.
+        if (state != GameState::kMenu) {
+            session.render(renderer);
+        }
+
+        switch (state) {
+            case GameState::kMenu:
+                ui.renderMenu(renderer);
+                break;
+            case GameState::kPlaying:
+                ui.renderHud(renderer, session.score(), session.lives());
+                break;
+            case GameState::kPaused:
+                ui.renderHud(renderer, session.score(), session.lives());
+                ui.renderPaused(renderer);
+                break;
+            case GameState::kGameOver:
+                ui.renderGameOver(renderer, session.score());
+                break;
+        }
+
         window.swapBuffers();
     }
 }
@@ -162,7 +204,7 @@ void runGameLoop(Window& window, Renderer& renderer, Spawner& spawner, const Inp
 }  // namespace
 
 /**
- * @brief Crea la ventana, renderer, entrada y spawner; ejecuta y libera recursos.
+ * @brief Crea ventana, renderer, entrada, fondos y UI; ejecuta y libera todo.
  * @return 0 si el juego terminó correctamente; 1 si falló la inicialización.
  */
 int main() {
@@ -187,11 +229,24 @@ int main() {
         return 1;
     }
 
-    Spawner spawner(static_cast<float>(window.width()),
-                    static_cast<float>(window.height()));
+    Background background;
+    if (!background.init(renderer, static_cast<float>(window.width()),
+                         static_cast<float>(window.height()))) {
+        std::cerr << "[main] Algunos fondos no se pudieron cargar." << std::endl;
+    }
 
-    runGameLoop(window, renderer, spawner, input);
+    GameSession session(input, static_cast<float>(window.width()),
+                        static_cast<float>(window.height()));
 
+    GameUi ui;
+    if (!ui.init(window.width(), window.height())) {
+        std::cerr << "[main] La interfaz de texto no se pudo inicializar." << std::endl;
+    }
+
+    runGameLoop(window, renderer, input, background, session, ui);
+
+    ui.cleanup();
+    background.cleanup(renderer);
     renderer.cleanup();
     window.terminate();
     return 0;

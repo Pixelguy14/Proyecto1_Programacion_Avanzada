@@ -1,3 +1,23 @@
+Para integrar frutas low poly en un proyecto de OpenGL, lo más recomendable es usar modelos en formato .obj o .glTF (ideales para cargar con librerías como Assimp o parsers propios en C/C++), o bien construirlas combinando primitivas geométricas básicas con pocos segmentos (slices y stacks).
+
+Cómo construirlas por código en OpenGL (Primitivas Low Poly)
+
+Si necesitas generarlas proceduralmente mediante código (por ejemplo, usando GL_TRIANGLES o glutSolidSphere con baja resolución y flat shading), esta es la estructura geométrica ideal para cada fruta:
+
+Fruta	Primitiva base y resolución	Modificaciones de vértices
+Melón	Esfera (10–12 slices, 8 stacks)	Escalar ligeramente en el eje Y (1.2f) para darle forma ovalada y alternar tonos verde claro/oscuro por franjas longitudinales.
+Manzana	Esfera (10 slices, 8 stacks)	Hundir los vértices del polo superior e inferior hacia el centro, ensanchar la parte superior y añadir un cilindro fino (5 lados) como tallo.
+Naranja	Esfera (10 slices, 8 stacks)	Mantener proporciones casi esféricas (1.0f, 0.95f, 1.0f) y agregar un pequeño cono verde en el polo superior.
+Limón	Esfera (10 slices, 8 stacks)	Estirar en el eje X (1.4f) y extruir ligeramente los dos polos opuestos para formar las puntas características.
+Plátano	Cilindro segmentado (6 lados, 6–8 anillos)	Curvar el eje central siguiendo un arco parabólico y reducir el radio de los anillos hacia ambos extremos hasta cerrarlos en punta.
+
+
+Consejos clave para el acabado Low Poly en OpenGL
+
+• Sombreado plano (Flat Shading). En OpenGL moderno, usa el calificador flat en tus shaders (o calcula una normal única por cara/triángulo en lugar de promediar normales por vértice) para que cada faceta poligonal se distinga con claridad.
+• Color por vértice. En lugar de texturas UV complejas, asigna colores directamente en el Vertex Buffer Object (VBO) para mantener bajo el consumo de memoria y facilitar la carga.
+
+
 To achieve the iconic low-poly fruit aesthetic from the original PlayStation 1 Crash Bandicoot games (like the Wumpa fruit) in modern OpenGL, you need to replicate three core PS1 hardware quirks: per-vertex Gouraud shading, affine texture mapping (optional for that extra retro warp), and vertex snapping (jitter).
 Here is the step-by-step approach to building it in OpenGL.
 

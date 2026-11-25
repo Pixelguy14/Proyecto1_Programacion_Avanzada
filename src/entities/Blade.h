@@ -67,6 +67,14 @@ public:
      */
     CutResult cutAt(const Vector2D<float>& center, float radius) const;
 
+    /**
+     * @brief Vacía el historial de la estela.
+     *
+     * Se usa al cambiar de estado (menú → partida, reinicio o game over) para
+     * que el tajo no arrastre puntos de la pantalla anterior.
+     */
+    void clearTrail() { m_trail.clear(); }
+
 private:
     /// Punto del historial con su antigüedad.
     struct TrailPoint {

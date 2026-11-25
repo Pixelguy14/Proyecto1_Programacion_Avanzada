@@ -82,6 +82,13 @@ public:
      */
     void terminate();
 
+    /**
+     * @brief Solicita el cierre de la ventana como si el usuario pulsara la X.
+     *
+     * El bucle principal termina en la siguiente comprobación de `shouldClose()`.
+     */
+    void requestClose();
+
     /// @return Ancho lógico solicitado al crear la ventana, en píxeles.
     int width() const { return m_width; }
 

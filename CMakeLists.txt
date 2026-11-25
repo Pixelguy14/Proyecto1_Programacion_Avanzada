@@ -38,6 +38,9 @@ add_subdirectory(external/glm)
 # OpenGL del sistema (solo el enlazador)
 find_package(OpenGL REQUIRED)
 
+# FreeType – rasterizado de la tipografía del HUD (Sprint 4)
+find_package(Freetype REQUIRED)
+
 # ------------------------------------------------------------
 # Fuentes del proyecto
 # ------------------------------------------------------------
@@ -55,7 +58,19 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 # ------------------------------------------------------------
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/external/stb
 )
+
+# Ruta absoluta del código fuente: AssetPaths la usa para encontrar los PNG y
+# la fuente aunque el ejecutable se lance desde build/ o build/bin/.
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    FRUITNINJA_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+)
+
+# Advertencias estrictas, coherentes con la verificación de cada sprint.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 # ------------------------------------------------------------
 # Enlazado
@@ -66,6 +81,7 @@ target_link_libraries(${PROJECT_NAME}
     glad_gl_core_33   # generado por glad_add_library() arriba
     glm::glm
     OpenGL::GL
+    Freetype::Freetype
 )
 
 # ------------------------------------------------------------

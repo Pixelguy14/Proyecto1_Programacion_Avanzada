@@ -4,6 +4,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// stb_image es header-only; la implementación se compila una sola vez aquí.
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -55,11 +59,43 @@ void main() {
 /// Código GLSL del fragment shader de figuras sólidas.
 const char* kFragmentSrc = R"(
 #version 330 core
-uniform vec3 uColor;
+uniform vec4 uColor;
 out vec4 FragColor;
 
 void main() {
-    FragColor = vec4(uColor, 1.0);
+    FragColor = uColor;
+}
+)";
+
+/// Vertex shader de texturas: quad transformado por modelo y proyección.
+const char* kTextureVertexSrc = R"(
+#version 330 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aTexCoord;
+
+uniform mat4 uProjection;
+uniform mat4 uModel;
+
+out vec2 vTexCoord;
+
+void main() {
+    vTexCoord = aTexCoord;
+    gl_Position = uProjection * uModel * vec4(aPos, 0.0, 1.0);
+}
+)";
+
+/// Fragment shader de texturas: conserva el color y aplica alpha uniforme.
+const char* kTextureFragmentSrc = R"(
+#version 330 core
+in vec2 vTexCoord;
+
+uniform sampler2D uTexture;
+uniform float uAlpha;
+out vec4 FragColor;
+
+void main() {
+    vec4 texel = texture(uTexture, vTexCoord);
+    FragColor = vec4(texel.rgb, texel.a * uAlpha);
 }
 )";
 
@@ -184,6 +220,40 @@ void uploadMesh(const std::vector<float>& vertices, unsigned int& vao, unsigned 
 }
 
 /**
+ * @brief Crea el quad unitario con posición y coordenadas de textura.
+ * @param vao VAO de salida.
+ * @param vbo VBO de salida.
+ *
+ * Vértices en orden triangle strip: BL, BR, TL, TR. Las UV van de (0,0) en la
+ * esquina inferior izquierda a (1,1) en la superior derecha.
+ */
+void uploadTextureQuad(unsigned int& vao, unsigned int& vbo) {
+    const std::vector<float> vertices = {
+        -1.0f, -1.0f, 0.0f, 0.0f,
+         1.0f, -1.0f, 1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f, 1.0f,
+         1.0f,  1.0f, 1.0f, 1.0f,
+    };
+
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                 vertices.data(), GL_STATIC_DRAW);
+
+    constexpr int kFloatsPerVertex = 4;
+    const auto stride = static_cast<GLsizei>(kFloatsPerVertex * sizeof(float));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, nullptr);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<const void*>(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
+}
+
+/**
  * @brief Genera los vértices de un círculo unitario como abanico de triángulos.
  *
  * El primer vértice es el centro (0,0) y los siguientes recorren la
@@ -281,7 +351,7 @@ std::vector<float> buildTrailVertices(const std::vector<Renderer::TrailPoint>& p
 }  // namespace
 
 bool Renderer::init(int screenWidth, int screenHeight) {
-    if (!buildShaderProgram() || !buildTrailProgram()) {
+    if (!buildShaderProgram() || !buildTrailProgram() || !buildTextureProgram()) {
         return false;
     }
 
@@ -317,6 +387,19 @@ bool Renderer::buildTrailProgram() {
     return true;
 }
 
+bool Renderer::buildTextureProgram() {
+    m_textureProgram = createProgram(kTextureVertexSrc, kTextureFragmentSrc);
+    if (m_textureProgram == 0) {
+        return false;
+    }
+
+    m_textureProjectionLocation = glGetUniformLocation(m_textureProgram, "uProjection");
+    m_textureModelLocation = glGetUniformLocation(m_textureProgram, "uModel");
+    m_textureAlphaLocation = glGetUniformLocation(m_textureProgram, "uAlpha");
+    m_textureSamplerLocation = glGetUniformLocation(m_textureProgram, "uTexture");
+    return true;
+}
+
 void Renderer::uploadProjection(int screenWidth, int screenHeight) {
     // Mapea el espacio de pantalla (0,width) x (0,height) a NDC, con Y hacia arriba.
     const glm::mat4 projection = glm::ortho(
@@ -329,6 +412,9 @@ void Renderer::uploadProjection(int screenWidth, int screenHeight) {
 
     glUseProgram(m_trailProgram);
     glUniformMatrix4fv(m_trailProjectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
+
+    glUseProgram(m_textureProgram);
+    glUniformMatrix4fv(m_textureProjectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
 }
 
 bool Renderer::setupGeometry() {
@@ -349,6 +435,8 @@ bool Renderer::setupGeometry() {
     uploadMesh(semicircleVertices, m_semiVAO, m_semiVBO);
     m_semiVertexCount = static_cast<unsigned int>(semicircleVertices.size() / 2);
 
+    uploadTextureQuad(m_textureVAO, m_textureVBO);
+
     // Malla dinámica de la estela: posición (vec2) + alpha (float) por vértice.
     glGenVertexArrays(1, &m_trailVAO);
     glGenBuffers(1, &m_trailVBO);
@@ -368,29 +456,97 @@ bool Renderer::setupGeometry() {
     return m_circleVAO != 0 && m_circleVBO != 0
         && m_rectVAO != 0 && m_rectVBO != 0
         && m_semiVAO != 0 && m_semiVBO != 0
+        && m_textureVAO != 0 && m_textureVBO != 0
         && m_trailVAO != 0 && m_trailVBO != 0;
 }
 
-void Renderer::drawCircle(const glm::vec2& center, float radius, const glm::vec3& color) {
+Texture Renderer::loadTexture(const std::string& path) {
+    stbi_set_flip_vertically_on_load(1);
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+    if (pixels == nullptr) {
+        std::cerr << "[Renderer] No se pudo cargar la textura: " << path << std::endl;
+        return {};
+    }
+
+    Texture texture;
+    texture.width = width;
+    texture.height = height;
+
+    glGenTextures(1, &texture.id);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(pixels);
+
+    return texture;
+}
+
+void Renderer::destroyTexture(Texture& texture) {
+    if (texture.id != 0) {
+        glDeleteTextures(1, &texture.id);
+    }
+    texture = Texture{};
+}
+
+void Renderer::drawTexture(const Texture& texture, const glm::vec2& center,
+                           const glm::vec2& size, float alpha) {
+    if (!texture.valid() || alpha <= 0.0f) {
+        return;
+    }
+
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(center, 0.0f));
+    model = glm::scale(model, glm::vec3(size.x * 0.5f, size.y * 0.5f, 1.0f));
+
+    glUseProgram(m_textureProgram);
+    glUniformMatrix4fv(m_textureModelLocation, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1f(m_textureAlphaLocation, alpha);
+    glUniform1i(m_textureSamplerLocation, 0);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+
+    glBindVertexArray(m_textureVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void Renderer::drawCircle(const glm::vec2& center, float radius, const glm::vec3& color,
+                          float alpha) {
     glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(center, 0.0f));
     model = glm::scale(model, glm::vec3(radius, radius, 1.0f));
-    drawPrimitive(m_circleVAO, m_circleVertexCount, GL_TRIANGLE_FAN, model, color);
+    drawPrimitive(m_circleVAO, m_circleVertexCount, GL_TRIANGLE_FAN, model,
+                  glm::vec4(color, alpha));
 }
 
 void Renderer::drawRect(const glm::vec2& center, const glm::vec2& size,
-                        float angleRadians, const glm::vec3& color) {
+                        float angleRadians, const glm::vec3& color, float alpha) {
     glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(center, 0.0f));
     model = glm::rotate(model, angleRadians, glm::vec3(0.0f, 0.0f, 1.0f));
     model = glm::scale(model, glm::vec3(size.x * 0.5f, size.y * 0.5f, 1.0f));
-    drawPrimitive(m_rectVAO, 4, GL_TRIANGLE_STRIP, model, color);
+    drawPrimitive(m_rectVAO, 4, GL_TRIANGLE_STRIP, model, glm::vec4(color, alpha));
 }
 
 void Renderer::drawSemicircle(const glm::vec2& center, float radius, float angleRadians,
-                              const glm::vec3& color) {
+                              const glm::vec3& color, float alpha) {
     glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(center, 0.0f));
     model = glm::rotate(model, angleRadians, glm::vec3(0.0f, 0.0f, 1.0f));
     model = glm::scale(model, glm::vec3(radius, radius, 1.0f));
-    drawPrimitive(m_semiVAO, m_semiVertexCount, GL_TRIANGLE_FAN, model, color);
+    drawPrimitive(m_semiVAO, m_semiVertexCount, GL_TRIANGLE_FAN, model,
+                  glm::vec4(color, alpha));
 }
 
 void Renderer::drawTrail(const std::vector<TrailPoint>& points, const glm::vec4& color) {
@@ -412,10 +568,10 @@ void Renderer::drawTrail(const std::vector<TrailPoint>& points, const glm::vec4&
 }
 
 void Renderer::drawPrimitive(unsigned int vao, unsigned int vertexCount, unsigned int mode,
-                             const glm::mat4& model, const glm::vec3& color) {
+                             const glm::mat4& model, const glm::vec4& color) {
     glUseProgram(m_shaderProgram);
     glUniformMatrix4fv(m_modelLocation, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform3fv(m_colorLocation, 1, glm::value_ptr(color));
+    glUniform4fv(m_colorLocation, 1, glm::value_ptr(color));
 
     glBindVertexArray(vao);
     glDrawArrays(mode, 0, static_cast<int>(vertexCount));
@@ -430,6 +586,14 @@ void Renderer::cleanup() {
     if (m_trailVAO != 0) {
         glDeleteVertexArrays(1, &m_trailVAO);
         m_trailVAO = 0;
+    }
+    if (m_textureVBO != 0) {
+        glDeleteBuffers(1, &m_textureVBO);
+        m_textureVBO = 0;
+    }
+    if (m_textureVAO != 0) {
+        glDeleteVertexArrays(1, &m_textureVAO);
+        m_textureVAO = 0;
     }
     if (m_circleVBO != 0) {
         glDeleteBuffers(1, &m_circleVBO);
@@ -462,5 +626,9 @@ void Renderer::cleanup() {
     if (m_trailProgram != 0) {
         glDeleteProgram(m_trailProgram);
         m_trailProgram = 0;
+    }
+    if (m_textureProgram != 0) {
+        glDeleteProgram(m_textureProgram);
+        m_textureProgram = 0;
     }
 }

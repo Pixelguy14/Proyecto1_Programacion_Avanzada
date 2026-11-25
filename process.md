@@ -279,8 +279,130 @@ flying halves.
   `build/sprint3.png`, donde se ven cáscara, pulpa, separación y giro.
 - Juego real ejecutado sin errores con el corte integrado en el bucle.
 
-## Sprint 4 – Game Loop, UI & Particles
-> (To be filled after completion)
+## Sprint 4 – Game Loop, UI & Backgrounds (parte 1)
+**Goal:** Dar al juego una máquina de estados visible (menú, partida, pausa y game over),
+fondos por escenario con crossfade y texto rasterizado con FreeType.
+
+> **Alcance de esta iteración:** fondos + tipografía + estados + HUD mínimo. Las
+> partículas de jugo, las bombas y la optimización con AVX quedan para la parte 2.
+
+### Tasks
+1. Máquina de estados `Menu → Playing → Paused → GameOver`.
+2. Cargar los cuatro PNG de `src/graphics/assets/` y asociarlos a cada estado.
+3. Crossfade al cambiar de escenario, sin depender de la dificultad.
+4. Integrar FreeType para dibujar títulos, HUD e instrucciones.
+5. HUD de puntos y vidas; perder una vida al dejar caer una fruta.
+6. Reinicio de partida y navegación completa por teclado.
+
+### References
+- FreeType 2 Documentation (https://freetype.org/).
+- LearnOpenGL – Text Rendering (atlas de glifos).
+- SIL Open Font License 1.1 (Zen Antique).
+- *The Nature of Code* – Cap. 1 (sistemas de coordenadas).
+
+### Implementación
+- `src/game/GameState.h`
+  - Enum `GameState { kMenu, kPlaying, kPaused, kGameOver }` y diagrama de
+    transiciones documentado.
+- `src/game/GameSession.h/.cpp`
+  - Agrupa `Spawner`, la lista de `GameObject`, `Blade`, `score` y `lives`.
+  - `update()` conserva el orden del Sprint 3: spawn → física → espada → corte →
+    frutas perdidas → limpieza.
+  - `reset()` vacía entidades, restaura 3 vidas, pone el puntaje a cero y limpia la
+    estela; se llama al entrar a `Playing` desde el menú, game over o al reiniciar.
+  - `countMissedFruits()` detecta frutas activas que murieron por caer (no las
+    cortadas, que ya perdieron `kActive`). Las bombas se excluyen.
+  - `isGameOver()` se activa al llegar a 0 vidas.
+- `src/game/GameUi.h/.cpp`
+  - HUD `PUNTOS` / `VIDAS` en las esquinas superiores.
+  - Overlays semitransparentes y textos de menú, pausa y game over.
+  - Texto centrado con sombra desplazada para mejorar el contraste.
+- `src/graphics/TextRenderer.h/.cpp`
+  - FreeType rasteriza ASCII imprimible (32–126) a un atlas de 10×10 celdas
+    (`GL_RED`, 64 px por glifo).
+  - Cada glifo guarda UV, tamaño, rodamiento y avance; el dibujado emite dos
+    triángulos por carácter en un VBO dinámico.
+  - Shader propio: `coverage = texture(uAtlas, uv).r` modula el alpha del color.
+  - `textWidth()`, `lineHeight()` y `ascent()` para centrar y alinear.
+- `src/graphics/Background.h/.cpp`
+  - Enum `BackgroundScene { kOutside, kRoom, kInside, kNursery }`.
+  - Carga `dojo_outside.png`, `dojo_room.png`, `dojo_inside.png` y
+    `dojo_nursery.png`.
+  - Crossfade de 0.8 s: el fondo anterior se dibuja opaco y el nuevo encima con
+    alpha 0→1. `setScene(scene, immediate)` permite saltar el fundido al arrancar.
+- `src/graphics/Texture.h` y `src/graphics/Renderer.h/.cpp`
+  - `Texture { id, width, height, valid() }` como tipo de valor.
+  - `loadTexture()` con `stb_image` (implementación única en `Renderer.cpp`),
+    `destroyTexture()` y `drawTexture(center, size, alpha)`.
+  - Shader de textura con `uAlpha`; las primitivas sólidas pasan a `vec4` para
+    admitir overlays transparentes.
+- `src/core/AssetPaths.h/.cpp`
+  - Prueba `FRUITNINJA_SOURCE_DIR/src/graphics/assets/` y rutas relativas
+    (`src/`, `../src/`, `../../src/`) hasta encontrar el archivo.
+- `src/core/Input.h/.cpp`
+  - Callback de teclado y `wasKeyPressed()` con flanco de subida por frame;
+    `beginFrame()` limpia el registro antes de `pollEvents()`.
+- `src/core/Window.h/.cpp`
+  - `requestClose()` para que `Esc` cierre la ventana desde el menú.
+- `src/entities/Blade.h`
+  - `clearTrail()` para no arrastrar puntos entre estados o partidas.
+- `src/main.cpp`
+  - `transitionFor()` centraliza las teclas de los cuatro estados.
+  - Solo `Playing` actualiza la sesión; `Paused` y `GameOver` congelan la escena.
+  - `backgroundFor()` mapea estado → escenario: menú/outside, partida/room,
+    pausa/inside, game over/nursery.
+- `CMakeLists.txt`
+  - `find_package(Freetype REQUIRED)` y `Freetype::Freetype`.
+  - Include de `external/stb` y define `FRUITNINJA_SOURCE_DIR`.
+  - Advertencias `-Wall -Wextra -Wpedantic` en GCC/Clang.
+- Recursos
+  - `src/graphics/assets/fonts/ZenAntique-Regular.ttf` + `OFL.txt` (SIL OFL 1.1).
+  - `external/stb/stb_image.h` (header-only, dominio público/MIT).
+
+### Checklist
+- [x] Cuatro fondos cargados y asociados a los estados.
+- [x] Crossfade de 0.8 s entre escenarios.
+- [x] FreeType integrado y tipografía Zen Antique con licencia OFL.
+- [x] Máquina de estados completa con teclado.
+- [x] HUD de puntos y vidas; game over alcanzable con 3 vidas.
+- [x] Reinicio de partida sin reiniciar el proceso.
+- [x] Renderer con texturas, alpha y liberación de recursos.
+- [x] Compila sin advertencias (`-Wall -Wextra -Wpedantic`).
+- [x] Verificado visualmente con capturas de los cuatro estados y del crossfade.
+
+### Decisiones de diseño
+- **Fondo por estado, no por dificultad**: los escenarios son cosméticos; la
+  progresión no altera el spawner ni la física.
+- **Crossfade directo**: dibujar el fondo viejo opaco y el nuevo con alpha creciente
+  evita parpadeos y no necesita una tercera textura.
+- **Atlas de celdas fijas**: una cuadrícula 10×10 para 95 glifos es más simple que
+  un empaquetador general y sobra para ASCII. El margen de 4 px evita sangrado.
+- **Un shader propio para texto**: el shader de texturas del Renderer aplica alpha
+  uniforme; el texto necesita muestrear cobertura (`GL_RED`) y tintar con color.
+- **Texto en píxeles de pantalla**: reutiliza la misma proyección que el resto del
+  juego y evita mezclar unidades.
+- **`stb_image` header-only**: evita añadir libpng/libjpeg y mantiene la compilación
+  portable; la implementación se compila una sola vez.
+- **`AssetPaths` con ruta de CMake**: el ejecutable puede lanzarse desde `build/` o
+  `build/bin/` sin depender del directorio de trabajo.
+- **Game over por frutas perdidas**: da un objetivo claro al HUD sin necesitar
+  bombas; las bombas ya se respetan en el código para el siguiente paso.
+
+### Verificación
+- Compilación limpia con `-Wall -Wextra -Wpedantic` sin advertencias.
+- Arnés temporal de captura con un FBO de 1920×1080 (no versionado):
+  - `build/sprint4_menu.png`: menú sobre `outside`.
+  - `build/sprint4_playing.png`: partida sobre `room` con frutas y HUD.
+  - `build/sprint4_fade.png`: crossfade a mitad de camino `room → inside`.
+  - `build/sprint4_paused.png`: pausa sobre `inside`.
+  - `build/sprint4_gameover.png`: game over sobre `nursery`.
+- Juego real ejecutado sin errores de carga de texturas ni de fuente.
+
+### Pendiente (parte 2)
+- Partículas de jugo al cortar.
+- Bombas en el spawner y penalización al cortarlas.
+- Optimización con AVX del cálculo de colisiones o física.
+- Sonido y pulido final (Sprint 5).
 
 ## Sprint 5 – Polish & Juice
 > (To be filled after completion)

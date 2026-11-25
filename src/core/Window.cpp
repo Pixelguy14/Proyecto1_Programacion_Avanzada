@@ -103,8 +103,13 @@ void Window::clear() {
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
-void Window::terminate() {
+void Window::requestClose() {
     if (m_window != nullptr) {
+        glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+    }
+}
+
+void Window::terminate() {    if (m_window != nullptr) {
         glfwDestroyWindow(m_window);
         m_window = nullptr;
     }
