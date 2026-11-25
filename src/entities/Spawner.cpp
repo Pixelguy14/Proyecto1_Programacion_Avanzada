@@ -29,6 +29,13 @@ constexpr float kMaxHorizontalSpeedFactor = 0.10f;
 constexpr float kMinAngularSpeed = 1.5f;
 constexpr float kMaxAngularSpeed = 3.0f;
 
+/// Bombas: lanzamientos de gracia antes de la primera y probabilidad después.
+constexpr int kBombGraceSpawns = 4;
+constexpr float kBombChance = 0.16f;
+
+/// Las bombas son un poco más grandes para que se distingan a simple vista.
+constexpr float kBombRadiusBonus = 1.08f;
+
 /// La fruta nace en la franja central de la pantalla (20 %–80 % del ancho).
 constexpr float kSpawnXMinFactor = 0.20f;
 constexpr float kSpawnXMaxFactor = 0.80f;
@@ -76,8 +83,14 @@ std::unique_ptr<Fruit> Spawner::trySpawn(float dt) {
 }
 
 std::unique_ptr<Fruit> Spawner::spawnFruit() {
-    const float radius = randomFloat(m_screenHeight * kMinRadiusFactor,
-                                     m_screenHeight * kMaxRadiusFactor);
+    const bool bomb = shouldSpawnBomb();
+    ++m_spawned;
+
+    float radius = randomFloat(m_screenHeight * kMinRadiusFactor,
+                               m_screenHeight * kMaxRadiusFactor);
+    if (bomb) {
+        radius *= kBombRadiusBonus;
+    }
 
     // Nace justo por debajo del borde inferior.
     const Vector2D<float> position{
@@ -94,7 +107,20 @@ std::unique_ptr<Fruit> Spawner::spawnFruit() {
     };
 
     const float angularVelocity = randomFloat(kMinAngularSpeed, kMaxAngularSpeed);
-    return std::make_unique<Fruit>(position, velocity, radius, angularVelocity, randomColor());
+    const glm::vec3 color = bomb ? glm::vec3{0.08f, 0.08f, 0.09f} : randomColor();
+
+    auto fruit = std::make_unique<Fruit>(position, velocity, radius, angularVelocity, color);
+    if (bomb) {
+        fruit->addFlag(FruitFlag::kBomb);
+    }
+    return fruit;
+}
+
+bool Spawner::shouldSpawnBomb() {
+    if (m_spawned < kBombGraceSpawns) {
+        return false;
+    }
+    return randomFloat(0.0f, 1.0f) < kBombChance;
 }
 
 float Spawner::randomFloat(float min, float max) {

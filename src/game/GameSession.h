@@ -2,9 +2,11 @@
 
 #include "core/GameObject.h"
 #include "entities/Blade.h"
+#include "entities/Particle.h"
 #include "entities/Spawner.h"
 
 #include <memory>
+#include <random>
 #include <vector>
 
 class Input;
@@ -15,23 +17,27 @@ class Renderer;
  * @brief Estado y reglas de una partida (Sprint 4).
  *
  * GameSession agrupa todo lo que existe solo mientras se juega: el spawner,
- * las entidades, la espada, el puntaje y las vidas. El bucle principal decide
- * *cuándo* actualizarla (solo en `Playing`) y la UI consulta sus contadores.
+ * las entidades, la espada, las partículas, el puntaje y las vidas. El bucle
+ * principal decide *cuándo* actualizarla (solo en `Playing`) y la UI consulta
+ * sus contadores.
  *
  *   main (máquina de estados)
  *     └── GameSession
- *           ├── Spawner            crea frutas
+ *           ├── Spawner            crea frutas y bombas
  *           ├── GameObjectList     frutas y mitades
+ *           ├── ParticleList       jugo y chispas (solo visuales)
  *           ├── Blade              estela y cortes
  *           └── score / lives      reglas de fin de partida
  *
  * ## Reglas actuales
- * - Cortar una fruta suma 1 punto.
+ * - Cortar una fruta suma 1 punto y emite una ráfaga de jugo.
  * - Dejar caer una fruta activa (sin cortarla) resta 1 vida.
+ * - Cortar una bomba termina la partida de inmediato (vidas a cero) y emite
+ *   una explosión de chispas.
  * - Con 0 vidas, `isGameOver()` devuelve true y el bucle cambia a `GameOver`.
  *
- * Las bombas (`FruitFlag::kBomb`) ya se respetan al cortar y al contar
- * pérdidas, aunque el spawner todavía no las genere.
+ * Las partículas no participan en las reglas: no suman puntos, no restan vidas
+ * y se eliminan solas al agotar su vida.
  */
 class GameSession {
 public:
@@ -48,8 +54,8 @@ public:
     /**
      * @brief Reinicia la partida: vacía entidades y restaura puntaje y vidas.
      *
-     * También limpia la estela para que no arrastre puntos de la pantalla
-     * anterior y recrea el spawner con la resolución actual.
+     * También limpia la estela y las partículas para que no arrastren puntos
+     * de la pantalla anterior y recrea el spawner con la resolución actual.
      */
     void reset();
 
@@ -57,13 +63,24 @@ public:
      * @brief Avanza un frame de simulación.
      * @param dt Delta time en segundos.
      *
-     * Orden: spawn → física → espada → cortes → frutas perdidas → limpieza.
+     * Orden: spawn → física → espada → partículas → cortes → frutas perdidas
+     * → limpieza. Las partículas se actualizan antes de los cortes para que las
+     * ráfagas recién emitidas aparezcan en su origen y no un paso adelantadas.
      * Si las vidas llegan a cero, la sesión queda marcada como terminada.
      */
     void update(float dt);
 
     /**
-     * @brief Dibuja las entidades y, encima, la estela de la espada.
+     * @brief Avanza solo los efectos visuales, sin tocar las reglas.
+     * @param dt Delta time en segundos.
+     *
+     * Se usa en `GameOver` para que la explosión de una bomba termine de
+     * animarse aunque la simulación principal ya esté detenida.
+     */
+    void updateEffects(float dt);
+
+    /**
+     * @brief Dibuja entidades, partículas y, encima, la estela de la espada.
      * @param renderer Renderer compartido.
      */
     void render(Renderer& renderer);
@@ -77,22 +94,31 @@ public:
     /// @return true si la partida terminó por quedarse sin vidas.
     bool isGameOver() const { return m_gameOver; }
 
+    /// @return true si la partida terminó porque el jugador cortó una bomba.
+    bool endedByBomb() const { return m_bombExploded; }
+
 private:
     /// Contenedor polimórfico de entidades; posee los objetos con unique_ptr.
     using GameObjectList = std::vector<std::unique_ptr<GameObject>>;
+
+    /// Contenedor de partículas visuales.
+    using ParticleList = std::vector<std::unique_ptr<Particle>>;
 
     /**
      * @brief Corta las frutas activas que toque el recorrido reciente.
      * @return Número de frutas cortadas en este frame.
      *
      * Las mitades se recogen en un vector temporal para no invalidar el
-     * iterador mientras se recorre la lista.
+     * iterador mientras se recorre la lista. Si el tajo toca una bomba, la
+     * marca como cortada, emite la explosión y deja las vidas en cero.
      */
     int sliceFruits();
 
     /**
      * @brief Cuenta las frutas activas que cayeron sin ser cortadas.
      * @return Número de frutas perdidas en este frame.
+     *
+     * Las bombas se excluyen: dejarlas caer no penaliza.
      */
     int countMissedFruits();
 
@@ -102,18 +128,64 @@ private:
     void removeDeadObjects();
 
     /**
+     * @brief Avanza y elimina las partículas caducadas.
+     * @param dt Delta time en segundos.
+     */
+    void updateParticles(float dt);
+
+    /**
+     * @brief Elimina las partículas marcadas como no vivas.
+     */
+    void removeDeadParticles();
+
+    /**
+     * @brief Emite una ráfaga de gotas de jugo en el punto de corte.
+     * @param origin Centro de la fruta cortada.
+     * @param color  Color de la fruta.
+     * @param radius Radio de la fruta, para escalar el tamaño de las gotas.
+     *
+     * Respeta el presupuesto máximo de partículas para que una racha de cortes
+     * no haga crecer la lista sin control.
+     */
+    void emitJuice(const Vector2D<float>& origin, const glm::vec3& color, float radius);
+
+    /**
+     * @brief Emite chispas y humo al cortar una bomba.
+     * @param origin Centro de la bomba.
+     * @param radius Radio de la bomba.
+     */
+    void emitExplosion(const Vector2D<float>& origin, float radius);
+
+    /**
      * @brief Dibuja todas las entidades de la lista.
      * @param renderer Renderer compartido.
      */
     void renderObjects(Renderer& renderer);
 
+    /**
+     * @brief Dibuja las partículas activas.
+     * @param renderer Renderer compartido.
+     */
+    void renderParticles(Renderer& renderer);
+
+    /**
+     * @brief Genera un número real uniforme en [min, max].
+     * @param min Límite inferior.
+     * @param max Límite superior.
+     * @return Valor aleatorio en el rango indicado.
+     */
+    float randomFloat(float min, float max);
+
 private:
     float m_width;               ///< Ancho lógico de la pantalla.
     float m_height;              ///< Alto lógico de la pantalla.
-    Spawner m_spawner;           ///< Generador de frutas.
+    Spawner m_spawner;           ///< Generador de frutas y bombas.
     Blade m_blade;               ///< Espada ligada a la entrada.
     GameObjectList m_objects;    ///< Frutas y mitades activas.
+    ParticleList m_particles;    ///< Jugo y chispas (solo visuales).
+    std::mt19937 m_rng;          ///< Generador para la variación de partículas.
     int m_score = 0;             ///< Puntaje actual.
     int m_lives = 3;             ///< Vidas restantes.
     bool m_gameOver = false;     ///< true cuando ya no quedan vidas.
+    bool m_bombExploded = false; ///< true si el fin de partida fue por una bomba.
 };

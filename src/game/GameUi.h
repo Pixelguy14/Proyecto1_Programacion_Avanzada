@@ -60,10 +60,11 @@ public:
 
     /**
      * @brief Dibuja el resultado final de la partida.
-     * @param renderer Renderer compartido.
-     * @param score    Puntaje con el que terminó la partida.
+     * @param renderer      Renderer compartido.
+     * @param score         Puntaje con el que terminó la partida.
+     * @param bombExploded  true si el jugador cortó una bomba.
      */
-    void renderGameOver(Renderer& renderer, int score) const;
+    void renderGameOver(Renderer& renderer, int score, bool bombExploded) const;
 
 private:
     /**

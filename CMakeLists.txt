@@ -73,6 +73,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # ------------------------------------------------------------
+# Optimización opcional con AVX
+# ------------------------------------------------------------
+# La ruta AVX se compila por función con target("avx") y se elige en tiempo de
+# ejecución; el binario sigue arrancando en CPUs sin AVX (ruta escalar).
+option(FRUITNINJA_ENABLE_AVX "Habilitar la ruta AVX de colisiones" ON)
+if(FRUITNINJA_ENABLE_AVX)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE FRUITNINJA_ENABLE_AVX=1)
+endif()
+
+# ------------------------------------------------------------
 # Enlazado
 # ------------------------------------------------------------
 target_link_libraries(${PROJECT_NAME}

@@ -51,32 +51,43 @@ void Blade::update(float dt) {
     const bool hasMoved = m_trail.empty()
         || current.distanceTo(m_trail.back().position) >= kMinDistance;
 
-    if (!hasMoved) {
+    if (hasMoved) {
+        m_trail.push_back(TrailPoint{current, 0.0f});
+        while (m_trail.size() > kMaxPoints) {
+            m_trail.pop_front();
+        }
+    }
+
+    rebuildSegments();
+}
+
+void Blade::rebuildSegments() {
+    m_segments.clear();
+    if (m_trail.size() < 2) {
         return;
     }
 
-    m_trail.push_back(TrailPoint{current, 0.0f});
-    while (m_trail.size() > kMaxPoints) {
-        m_trail.pop_front();
+    m_segments.reserve(m_trail.size() - 1);
+
+    // Del más reciente al más antiguo: el segmento (n-2, n-1) va primero.
+    for (std::size_t i = m_trail.size(); i-- > 1;) {
+        m_segments.push_back(Collision::Segment{
+            m_trail[i - 1].position,
+            m_trail[i].position,
+        });
     }
 }
 
 Blade::CutResult Blade::cutAt(const Vector2D<float>& center, float radius) const {
-    if (m_trail.size() < 2) {
+    const Collision::SegmentHit hit = Collision::firstSegmentHit(
+        m_segments.data(), m_segments.size(), center, radius);
+
+    if (!hit.hit) {
         return {};
     }
 
-    // Del punto más reciente al más antiguo: el primer segmento que toca manda.
-    for (std::size_t i = m_trail.size(); i-- > 1;) {
-        const Vector2D<float>& newest = m_trail[i].position;
-        const Vector2D<float>& previous = m_trail[i - 1].position;
-
-        if (Collision::segmentIntersectsCircle(previous, newest, center, radius)) {
-            return CutResult{true, (newest - previous).normalized()};
-        }
-    }
-
-    return {};
+    const Collision::Segment& segment = m_segments[hit.index];
+    return CutResult{true, (segment.end - segment.start).normalized()};
 }
 
 void Blade::render(Renderer& renderer) {

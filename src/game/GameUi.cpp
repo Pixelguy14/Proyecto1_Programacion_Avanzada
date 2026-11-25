@@ -119,6 +119,9 @@ void GameUi::renderMenu(Renderer& renderer) const {
     drawCenteredWithShadow("Corta las frutas con el mouse", glm::vec2{centerX, 540.0f},
                            kSubtitleScale, kGold);
 
+    drawCenteredWithShadow("EVITA LAS BOMBAS", glm::vec2{centerX, 470.0f},
+                           kSubtitleScale, kRed);
+
     drawCenteredWithShadow("ENTER / ESPACIO   -   JUGAR", glm::vec2{centerX, 400.0f},
                            kInstructionScale, kCream);
     drawCenteredWithShadow("ESC   -   SALIR", glm::vec2{centerX, 330.0f},
@@ -139,17 +142,22 @@ void GameUi::renderPaused(Renderer& renderer) const {
                            kInstructionScale, kCream);
 }
 
-void GameUi::renderGameOver(Renderer& renderer, int score) const {
+void GameUi::renderGameOver(Renderer& renderer, int score, bool bombExploded) const {
     drawOverlay(renderer, m_width, m_height, 0.68f);
 
     const float centerX = static_cast<float>(m_width) * 0.5f;
-    drawCenteredWithShadow("GAME OVER", glm::vec2{centerX, 690.0f}, 2.4f, kRed);
+    drawCenteredWithShadow("GAME OVER", glm::vec2{centerX, 730.0f}, 2.4f, kRed);
+
+    if (bombExploded) {
+        drawCenteredWithShadow("CORTASTE UNA BOMBA", glm::vec2{centerX, 605.0f},
+                               kSubtitleScale, kGold);
+    }
 
     const std::string scoreText = "PUNTOS  " + std::to_string(score);
-    drawCenteredWithShadow(scoreText, glm::vec2{centerX, 540.0f}, 1.15f, kGold);
+    drawCenteredWithShadow(scoreText, glm::vec2{centerX, 510.0f}, 1.15f, kGold);
 
     drawCenteredWithShadow("ENTER / ESPACIO   -   JUGAR DE NUEVO",
-                           glm::vec2{centerX, 400.0f}, kInstructionScale, kCream);
-    drawCenteredWithShadow("ESC   -   MENU", glm::vec2{centerX, 330.0f},
+                           glm::vec2{centerX, 380.0f}, kInstructionScale, kCream);
+    drawCenteredWithShadow("ESC   -   MENU", glm::vec2{centerX, 310.0f},
                            kInstructionScale, kCream);
 }

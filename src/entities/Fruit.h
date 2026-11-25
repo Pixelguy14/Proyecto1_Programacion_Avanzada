@@ -101,6 +101,12 @@ public:
     /// @return Posición actual en píxeles.
     const Vector2D<float>& position() const { return m_body.position; }
 
+    /// @return Color del cuerpo (en una bomba, el color guardado de la fruta).
+    const glm::vec3& color() const { return m_color; }
+
+    /// @return true si la fruta es una bomba.
+    bool isBomb() const { return hasFlag(FruitFlag::kBomb); }
+
     /// @return Registro completo de banderas.
     unsigned int flags() const { return m_flags; }
 
@@ -159,6 +165,15 @@ private:
      * a la fruta recién lanzada desde debajo de la pantalla.
      */
     bool hasFallenOffScreen() const;
+
+    /**
+     * @brief Dibuja una bomba: cuerpo oscuro, borde rojo, brillo, mecha y chispa.
+     * @param renderer Renderer compartido.
+     *
+     * Se reutiliza la rotación de la fruta para orientar la mecha, de modo que
+     * la bomba también gira durante el vuelo.
+     */
+    void renderBomb(Renderer& renderer);
 
     /**
      * @brief Calcula el desplazamiento del tallo según el ángulo actual.

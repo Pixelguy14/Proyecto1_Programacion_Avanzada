@@ -279,12 +279,13 @@ flying halves.
   `build/sprint3.png`, donde se ven cáscara, pulpa, separación y giro.
 - Juego real ejecutado sin errores con el corte integrado en el bucle.
 
-## Sprint 4 – Game Loop, UI & Backgrounds (parte 1)
+## Sprint 4 – Game Loop, UI, Backgrounds & Juice
 **Goal:** Dar al juego una máquina de estados visible (menú, partida, pausa y game over),
-fondos por escenario con crossfade y texto rasterizado con FreeType.
+fondos por escenario con crossfade, texto rasterizado con FreeType, partículas de jugo,
+bombas y detección de colisiones acelerada con AVX.
 
-> **Alcance de esta iteración:** fondos + tipografía + estados + HUD mínimo. Las
-> partículas de jugo, las bombas y la optimización con AVX quedan para la parte 2.
+> **Alcance del sprint:** estados + fondos + tipografía + HUD + partículas + bombas +
+> AVX. El sonido y el pulido final quedan para el Sprint 5.
 
 ### Tasks
 1. Máquina de estados `Menu → Playing → Paused → GameOver`.
@@ -292,13 +293,17 @@ fondos por escenario con crossfade y texto rasterizado con FreeType.
 3. Crossfade al cambiar de escenario, sin depender de la dificultad.
 4. Integrar FreeType para dibujar títulos, HUD e instrucciones.
 5. HUD de puntos y vidas; perder una vida al dejar caer una fruta.
-6. Reinicio de partida y navegación completa por teclado.
+6. Reiniciar la partida y navegar por teclado.
+7. Emitir partículas de jugo al cortar una fruta.
+8. Añadir bombas al spawner y terminar la partida al cortarlas.
+9. Optimizar la detección segmento-círculo con AVX, con respaldo escalar.
 
 ### References
 - FreeType 2 Documentation (https://freetype.org/).
 - LearnOpenGL – Text Rendering (atlas de glifos).
 - SIL Open Font License 1.1 (Zen Antique).
-- *The Nature of Code* – Cap. 1 (sistemas de coordenadas).
+- *The Nature of Code* – Cap. 1 (sistemas de coordenadas) y Cap. 2.6 (integración).
+- Intel Intrinsics Guide (AVX: `_mm256_*`).
 
 ### Implementación
 - `src/game/GameState.h`
@@ -359,6 +364,54 @@ fondos por escenario con crossfade y texto rasterizado con FreeType.
   - `src/graphics/assets/fonts/ZenAntique-Regular.ttf` + `OFL.txt` (SIL OFL 1.1).
   - `external/stb/stb_image.h` (header-only, dominio público/MIT).
 
+### Implementación – parte 2
+- `src/entities/Particle.h/.cpp`
+  - Círculo con `PhysicsBody`, gravedad escalada y arrastre lineal.
+  - `update()` envejece, integra y marca la partícula como muerta al agotar su vida.
+  - `render()` reduce radio y alpha con `lifeRatio()`.
+  - Se usa tanto para el jugo como para las chispas y el humo de la bomba.
+- `src/game/GameSession.h/.cpp`
+  - Nueva `ParticleList m_particles` separada de las entidades jugables, con
+    presupuesto máximo de 500 partículas.
+  - `emitJuice()`: 14 gotas del color de la fruta, con dirección, velocidad, tamaño
+    y color ligeramente aleatorios.
+  - `emitExplosion()`: 24 partículas alternando chispas naranjas y humo oscuro.
+  - Orden de `update()`: spawn → física → espada → partículas → cortes → frutas
+    perdidas → limpieza.
+  - `sliceFruits()` ahora distingue bombas: las marca como cortadas, emite la
+    explosión y deja las vidas en cero. Expone `endedByBomb()`.
+  - `reset()` también limpia las partículas y el indicador de bomba.
+  - RNG propio (`std::mt19937`) para la variación visual.
+- `src/entities/Fruit.h/.cpp`
+  - `color()` e `isBomb()` como consultas de lectura.
+  - `renderBomb()`: borde rojo, cuerpo oscuro, brillo, mecha rotada con la fruta y
+    chispa de dos tonos. La mecha reutiliza `stemOffset()`.
+- `src/entities/Spawner.h/.cpp`
+  - Constantes `kBombGraceSpawns = 4` y `kBombChance = 0.16`.
+  - `shouldSpawnBomb()` evita bombas en los primeros lanzamientos; después sortea
+    cada objeto.
+  - Las bombas nacen con `FruitFlag::kBomb` y un radio 8 % mayor.
+- `src/math/Collision.h/.cpp`
+  - `Segment`, `SegmentHit` y `firstSegmentHit()`.
+  - Ruta AVX: 8 segmentos por iteración (`_mm256_*`), `target("avx")` y despacho con
+    `__builtin_cpu_supports("avx")`; en CPUs sin AVX se usa la ruta escalar.
+  - La máscara AVX se resuelve con el bit más bajo para devolver el segmento más
+    reciente, igual que el recorrido escalar.
+  - `usesAvx()` permite diagnosticar qué ruta se está usando.
+- `src/entities/Blade.h/.cpp`
+  - Caché `std::vector<Collision::Segment> m_segments` reconstruida una vez por
+    frame, ordenada del segmento más reciente al más antiguo.
+  - `cutAt()` delega en `firstSegmentHit()`; `clearTrail()` limpia también la caché.
+- `src/game/GameUi.h/.cpp`
+  - El menú muestra `EVITA LAS BOMBAS`.
+  - `renderGameOver(score, bombExploded)` añade `CORTASTE UNA BOMBA` cuando
+    corresponde.
+- `src/main.cpp`
+  - Pasa `endedByBomb()` a la UI y registra en consola si las colisiones usan AVX.
+- `CMakeLists.txt`
+  - Opción `FRUITNINJA_ENABLE_AVX` (ON por defecto) que define
+    `FRUITNINJA_ENABLE_AVX=1`.
+
 ### Checklist
 - [x] Cuatro fondos cargados y asociados a los estados.
 - [x] Crossfade de 0.8 s entre escenarios.
@@ -369,6 +422,10 @@ fondos por escenario con crossfade y texto rasterizado con FreeType.
 - [x] Renderer con texturas, alpha y liberación de recursos.
 - [x] Compila sin advertencias (`-Wall -Wextra -Wpedantic`).
 - [x] Verificado visualmente con capturas de los cuatro estados y del crossfade.
+- [x] Partículas de jugo al cortar una fruta.
+- [x] Bombas en el spawner con fin de partida al cortarlas.
+- [x] Colisiones con AVX y respaldo escalar.
+- [x] Verificación visual de la bomba, el jugo y el mensaje de game over.
 
 ### Decisiones de diseño
 - **Fondo por estado, no por dificultad**: los escenarios son cosméticos; la
@@ -385,8 +442,19 @@ fondos por escenario con crossfade y texto rasterizado con FreeType.
   portable; la implementación se compila una sola vez.
 - **`AssetPaths` con ruta de CMake**: el ejecutable puede lanzarse desde `build/` o
   `build/bin/` sin depender del directorio de trabajo.
-- **Game over por frutas perdidas**: da un objetivo claro al HUD sin necesitar
-  bombas; las bombas ya se respetan en el código para el siguiente paso.
+- **Vidas por frutas perdidas**: da un objetivo claro al HUD; cortar una bomba es
+  una derrota inmediata, una regla aparte y más dura que perder una vida.
+- **Partículas fuera de `m_objects`**: una lista separada con presupuesto fijo evita
+  mezclar objetos jugables con efectos y mantiene rápidos los `dynamic_cast`.
+- **Bomba = fin inmediato**: es la regla clásica de Fruit Ninja y hace evidente el
+  riesgo sin añadir otra barra o contador.
+- **AVX por función con despacho en tiempo de ejecución**: el binario no exige AVX
+  para arrancar; `target("avx")` solo vectoriza `hitMask8()` y la ruta escalar queda
+  como respaldo en CPUs antiguas y en arquitecturas no x86.
+- **Caché de segmentos en `Blade`**: reconstruir el deque por cada fruta sería
+  redundante; el arreglo contiguo además es requisito para cargar 8 segmentos con AVX.
+- **Una sola clase `Particle`**: jugo, chispas y humo comparten física y desvanecido;
+  solo cambian color, gravedad y arrastre.
 
 ### Verificación
 - Compilación limpia con `-Wall -Wextra -Wpedantic` sin advertencias.
@@ -396,15 +464,19 @@ fondos por escenario con crossfade y texto rasterizado con FreeType.
   - `build/sprint4_fade.png`: crossfade a mitad de camino `room → inside`.
   - `build/sprint4_paused.png`: pausa sobre `inside`.
   - `build/sprint4_gameover.png`: game over sobre `nursery`.
-- Juego real ejecutado sin errores de carga de texturas ni de fuente.
+  - `build/sprint4_juice.png`: mitades y ráfaga de jugo junto a una bomba.
+  - `build/sprint4_bomb_gameover.png`: overlay con `CORTASTE UNA BOMBA`.
+- Prueba aleatoria de `firstSegmentHit()`: 200 000 casos con hasta 40 segmentos,
+  0 diferencias entre la ruta AVX y la escalar.
+- Juego real ejecutado sin errores de carga de texturas ni de fuente; la consola
+  muestra `[main] Colisiones: AVX`.
 
-### Pendiente (parte 2)
-- Partículas de jugo al cortar.
-- Bombas en el spawner y penalización al cortarlas.
-- Optimización con AVX del cálculo de colisiones o física.
-- Sonido y pulido final (Sprint 5).
+### Pendiente (Sprint 5)
+- Sonido y música.
+- Dificultad progresiva (más bombas y menos intervalo con el puntaje).
+- Pulido de animaciones y efectos finales.
 
-## Sprint 5 – Polish & Juice
+## Sprint 5 – Polish & Sound
 > (To be filled after completion)
 
 ---

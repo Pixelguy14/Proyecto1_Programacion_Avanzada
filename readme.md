@@ -3,10 +3,10 @@
 Clon de **Fruit Ninja** en C++17 con OpenGL 3.3 core, basado en *The Nature of Code*
 (cap. 2.6) y el trackeo del mouse.
 
-Estado actual: **Sprint 4 (parte 1) terminado** — máquina de estados, cuatro fondos
-con crossfade, tipografía FreeType (Zen Antique), HUD de puntos/vidas y pantallas de
-menú, pausa y game over. Las partículas de jugo y la optimización con AVX quedan para
-la segunda parte del sprint. Ver [`process.md`](process.md) para el detalle.
+Estado actual: **Sprint 4 terminado** — máquina de estados, cuatro fondos con
+crossfade, tipografía FreeType (Zen Antique), HUD de puntos/vidas, pantallas de menú,
+pausa y game over, partículas de jugo, bombas y detección de colisiones con AVX
+(con respaldo escalar). Ver [`process.md`](process.md) para el detalle.
 
 ---
 
@@ -151,6 +151,15 @@ cmake --build build --parallel
 rm -rf build            # Windows: rmdir /s /q build
 ```
 
+La ruta **AVX** de las colisiones se activa por defecto (`FRUITNINJA_ENABLE_AVX=ON`).
+Se compila por función con `target("avx")` y se elige en tiempo de ejecución, así que
+el binario sigue arrancando en CPUs sin AVX mediante la ruta escalar. Para forzar la
+ruta escalar:
+
+```bash
+cmake -S . -B build -DFRUITNINJA_ENABLE_AVX=OFF
+```
+
 **Windows con Visual Studio** (generador multi-configuración):
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
@@ -190,9 +199,15 @@ estado hace un **crossfade** de 0.8 s.
 
 Mueve el mouse por la ventana para dibujar la estela de la espada. El cursor del
 sistema se oculta y la estela se desvanece al detener el mouse. Si el recorrido
-atraviesa una fruta, esta se parte en **dos mitades** con física propia. Cada fruta
-cortada suma un punto; cada fruta que cae sin cortar resta una vida. Con **3 vidas**
-iniciales, al llegar a cero aparece la pantalla de game over.
+atraviesa una fruta, esta se parte en **dos mitades** con física propia y suelta una
+**ráfaga de jugo** del color de la fruta. Cada fruta cortada suma un punto; cada fruta
+que cae sin cortar resta una vida. Con **3 vidas** iniciales, al llegar a cero aparece
+la pantalla de game over.
+
+Las **bombas** aparecen después de unos lanzamientos: tienen cuerpo oscuro, borde rojo
+y mecha encendida. Cortar una termina la partida de inmediato con una explosión de
+chispas; dejarla caer no penaliza. Al arrancar, la consola indica si las colisiones
+usan la ruta `AVX` o la `escalar`.
 
 **Recursos incluidos:** los cuatro PNG de `src/graphics/assets/` y la tipografía
 `fonts/ZenAntique-Regular.ttf` (SIL Open Font License 1.1, ver

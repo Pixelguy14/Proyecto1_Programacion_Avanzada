@@ -34,6 +34,26 @@ constexpr float kHalfSeparationSpeed = 170.0f;
 /// Giro extra que diferencia a las dos mitades, en radianes/segundo.
 constexpr float kHalfSpinSpeed = 2.4f;
 
+/// Colores de la bomba (Sprint 4, parte 2).
+const glm::vec3 kBombRimColor{0.62f, 0.14f, 0.12f};
+const glm::vec3 kBombBodyColor{0.07f, 0.07f, 0.09f};
+const glm::vec3 kBombSheenColor{0.34f, 0.35f, 0.40f};
+const glm::vec3 kBombFuseColor{0.46f, 0.31f, 0.16f};
+const glm::vec3 kBombSparkColor{1.00f, 0.70f, 0.18f};
+const glm::vec3 kBombSparkCoreColor{1.00f, 0.96f, 0.80f};
+
+/// Geometría de la bomba, como fracción del radio.
+constexpr float kBombRimScale = 1.06f;
+constexpr float kBombBodyScale = 0.97f;
+constexpr float kBombSheenOffsetFactor = 0.32f;
+constexpr float kBombSheenRadiusFactor = 0.22f;
+constexpr float kBombFuseThicknessFactor = 0.10f;
+constexpr float kBombFuseLengthFactor = 0.42f;
+constexpr float kBombFuseDistanceFactor = 0.95f;
+constexpr float kBombSparkDistanceFactor = 1.20f;
+constexpr float kBombSparkRadiusFactor = 0.18f;
+constexpr float kBombSparkCoreScale = 0.55f;
+
 }  // namespace
 
 Fruit::Fruit(const Vector2D<float>& position, const Vector2D<float>& velocity, float radius,
@@ -55,6 +75,11 @@ void Fruit::update(float dt) {
 }
 
 void Fruit::render(Renderer& renderer) {
+    if (hasFlag(FruitFlag::kBomb)) {
+        renderBomb(renderer);
+        return;
+    }
+
     const glm::vec2 center{m_body.position.x, m_body.position.y};
     renderer.drawCircle(center, m_radius, m_color);
 
@@ -69,6 +94,44 @@ void Fruit::render(Renderer& renderer) {
         m_radius * kStemLengthFactor,
     };
     renderer.drawRect(stemCenter, stemSize, m_angle, kStemColor);
+}
+
+void Fruit::renderBomb(Renderer& renderer) {
+    const glm::vec2 center{m_body.position.x, m_body.position.y};
+    const Vector2D<float> direction = stemOffset().normalized();
+
+    // Borde rojo y cuerpo oscuro: el anillo hace que la bomba se distinga de
+    // una fruta incluso cuando el fondo es claro.
+    renderer.drawCircle(center, m_radius * kBombRimScale, kBombRimColor);
+    renderer.drawCircle(center, m_radius * kBombBodyScale, kBombBodyColor);
+
+    // Brillo desplazado hacia arriba-izquierda (luz fija de la escena).
+    const glm::vec2 sheenCenter{
+        center.x - m_radius * kBombSheenOffsetFactor,
+        center.y + m_radius * kBombSheenOffsetFactor,
+    };
+    renderer.drawCircle(sheenCenter, m_radius * kBombSheenRadiusFactor,
+                        kBombSheenColor, 0.55f);
+
+    // Mecha orientada con la rotación de la fruta.
+    const glm::vec2 fuseCenter{
+        m_body.position.x + direction.x * m_radius * kBombFuseDistanceFactor,
+        m_body.position.y + direction.y * m_radius * kBombFuseDistanceFactor,
+    };
+    renderer.drawRect(fuseCenter,
+                      glm::vec2{m_radius * kBombFuseThicknessFactor,
+                                m_radius * kBombFuseLengthFactor},
+                      m_angle, kBombFuseColor);
+
+    // Chispa encendida en la punta de la mecha.
+    const glm::vec2 sparkCenter{
+        m_body.position.x + direction.x * m_radius * kBombSparkDistanceFactor,
+        m_body.position.y + direction.y * m_radius * kBombSparkDistanceFactor,
+    };
+    renderer.drawCircle(sparkCenter, m_radius * kBombSparkRadiusFactor, kBombSparkColor);
+    renderer.drawCircle(sparkCenter,
+                        m_radius * kBombSparkRadiusFactor * kBombSparkCoreScale,
+                        kBombSparkCoreColor);
 }
 
 bool Fruit::isAlive() const {

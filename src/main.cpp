@@ -5,6 +5,7 @@
 #include "game/GameUi.h"
 #include "graphics/Background.h"
 #include "graphics/Renderer.h"
+#include "math/Collision.h"
 
 #include <algorithm>
 #include <iostream>
@@ -170,6 +171,11 @@ void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& b
             }
         }
 
+        // La explosión de la bomba sigue animándose aunque la partida terminó.
+        if (state == GameState::kGameOver) {
+            session.updateEffects(dt);
+        }
+
         background.setScene(backgroundFor(state));
         background.update(dt);
 
@@ -193,7 +199,7 @@ void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& b
                 ui.renderPaused(renderer);
                 break;
             case GameState::kGameOver:
-                ui.renderGameOver(renderer, session.score());
+                ui.renderGameOver(renderer, session.score(), session.endedByBomb());
                 break;
         }
 
@@ -237,6 +243,9 @@ int main() {
 
     GameSession session(input, static_cast<float>(window.width()),
                         static_cast<float>(window.height()));
+
+    std::cout << "[main] Colisiones: "
+              << (Collision::usesAvx() ? "AVX" : "escalar") << std::endl;
 
     GameUi ui;
     if (!ui.init(window.width(), window.height())) {
