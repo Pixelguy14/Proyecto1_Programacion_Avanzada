@@ -100,7 +100,7 @@ void Background::update(float dt) {
 }
 
 void Background::render(Renderer& renderer) {
-    if (m_assets == nullptr) {
+    if (m_assets == nullptr || m_width <= 0.0f || m_height <= 0.0f) {
         return;
     }
 

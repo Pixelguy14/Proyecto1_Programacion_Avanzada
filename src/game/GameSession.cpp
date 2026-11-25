@@ -1,5 +1,6 @@
 #include "GameSession.h"
 
+#include "core/AssetManager.h"
 #include "entities/Fruit.h"
 #include "entities/FruitHalf.h"
 #include "graphics/Renderer.h"
@@ -25,10 +26,11 @@ constexpr std::size_t kMaxParticles = 500;
 /// Margen extra del radio de corte para que el tajo sea más indulgente.
 constexpr float kCutRadiusFactor = 1.15f;
 
-/// Amplitudes del screen shake, en píxeles.
-constexpr float kSliceShake = 3.5f;
-constexpr float kBombShake = 24.0f;
-constexpr float kMissedShakePerFruit = 5.0f;
+/// Volúmenes base de los efectos (el motor aplica además el volumen maestro).
+constexpr float kSliceVolume = 0.55f;
+constexpr float kBombVolume = 0.90f;
+constexpr float kMissVolume = 0.55f;
+constexpr float kGameOverVolume = 0.75f;
 
 /// Ráfaga de jugo al cortar una fruta.
 constexpr int kJuiceParticles = 14;
@@ -59,11 +61,13 @@ constexpr float kTwoPi = 6.28318530718f;
 
 }  // namespace
 
-GameSession::GameSession(const Input& input, float screenWidth, float screenHeight)
+GameSession::GameSession(const Input& input, float screenWidth, float screenHeight,
+                         AssetManager& assets)
     : m_width(screenWidth),
       m_height(screenHeight),
       m_spawner(screenWidth, screenHeight),
-      m_blade(input) {
+      m_blade(input),
+      m_assets(assets) {
     m_objects.reserve(64);
     m_particles.reserve(256);
 
@@ -79,7 +83,6 @@ void GameSession::reset() {
     m_lives = kStartingLives;
     m_gameOver = false;
     m_bombExploded = false;
-    m_shake.reset();
     m_blade.clearTrail();
     m_spawner = Spawner(m_width, m_height);
 }
@@ -104,21 +107,23 @@ void GameSession::update(float dt) {
     const int missed = countMissedFruits();
     if (missed > 0) {
         m_lives -= missed;
-        m_shake.trigger(kMissedShakePerFruit * static_cast<float>(missed));
+        m_assets.playSound("sfx_miss", kMissVolume);
     }
     m_lives = std::max(m_lives, 0);
 
     removeDeadObjects();
-    m_shake.update(dt);
 
-    if (m_lives == 0) {
+    if (m_lives == 0 && !m_gameOver) {
         m_gameOver = true;
+        // La explosión de la bomba ya funciona como sonido de derrota.
+        if (!m_bombExploded) {
+            m_assets.playSound("sfx_gameover", kGameOverVolume);
+        }
     }
 }
 
 void GameSession::updateEffects(float dt) {
     updateParticles(dt);
-    m_shake.update(dt);
 }
 
 int GameSession::sliceFruits() {
@@ -141,7 +146,7 @@ int GameSession::sliceFruits() {
             // Cortar una bomba termina la partida: no genera mitades ni puntos.
             fruit->markSliced();
             emitExplosion(fruit->position(), fruit->radius());
-            m_shake.trigger(kBombShake);
+            m_assets.playSound("sfx_bomb", kBombVolume);
             m_bombExploded = true;
             m_lives = 0;
             continue;
@@ -156,7 +161,8 @@ int GameSession::sliceFruits() {
         }
 
         emitJuice(fruit->position(), fruit->color(), fruit->radius());
-        m_shake.trigger(kSliceShake);
+        // Pequeña variación de tono para que los cortes no suenen idénticos.
+        m_assets.playSound("sfx_slice", kSliceVolume, randomFloat(0.90f, 1.15f));
         ++sliced;
         ++m_score;
     }

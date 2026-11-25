@@ -3,9 +3,10 @@
 Clon de **Fruit Ninja** en C++17 con OpenGL 3.3 core, basado en *The Nature of Code*
 (cap. 2.6) y el trackeo del mouse.
 
-Estado actual: **Sprint 5 (Fase A) terminado** — `AssetManager` con tabla hash de la
-STL, screen shake, dificultad progresiva y mapeo intencional de fondos documentado.
-Faltan el audio (Fase B) y las frutas 3D low-poly (Fase C). Ver
+Estado actual: **Sprint 5 (Fase B) terminado** — `AssetManager` con tabla hash de la
+STL, dificultad progresiva, audio con miniaudio (corte, bomba, fruta perdida y game
+over) y mapeo intencional de fondos documentado. El screen shake se descartó porque
+se percibía como jitter. Falta la Fase C (frutas 3D low-poly). Ver
 [`process.md`](process.md) para el detalle.
 
 ---
@@ -28,7 +29,9 @@ Faltan el audio (Fase B) y las frutas 3D low-poly (Fase C). Ver
 
 > **FreeType sí se instala con el gestor de paquetes** (o se obtiene con Homebrew /
 > vcpkg en macOS y Windows). CMake lo busca con `find_package(Freetype REQUIRED)`.
-> `stb_image` está incluido en `external/stb/` y no requiere instalación.
+> `stb_image` y **miniaudio** están incluidos en `external/` y no requieren
+> instalación. miniaudio enlaza el backend de audio del sistema en tiempo de
+> ejecución (ALSA/PulseAudio en Linux, CoreAudio en macOS, WASAPI en Windows).
 
 > **GLFW, GLAD y GLM no se instalan con el gestor de paquetes.** Están versionados como
 > submódulos de Git en `external/`, así que todos los que compilen usan exactamente las
@@ -126,7 +129,8 @@ git submodule update --init --recursive
 ```
 
 Los submódulos son GLFW, GLAD y GLM (ver `.gitmodules`); sin ellos CMake no puede
-configurar el proyecto.
+configurar el proyecto. `stb_image` y `miniaudio` están versionados directamente en
+`external/` y se incluyen en la compilación.
 
 ---
 
@@ -209,17 +213,24 @@ y mecha encendida. Cortar una termina la partida de inmediato con una explosión
 chispas; dejarla caer no penaliza. Al arrancar, la consola indica si las colisiones
 usan la ruta `AVX` o la `escalar`.
 
-La escena hace un **screen shake** corto al cortar frutas y uno más fuerte al explotar
-una bomba; el HUD se mantiene fijo. La **dificultad sube** con los lanzamientos: las
-frutas salen más seguidas, con más velocidad horizontal y con más probabilidad de
-bomba. El radio de corte tiene un margen extra del 15 % para que el tajo sea más
-indulgente.
+No hay **screen shake**: al cortar, explotar o fallar, el feedback viene del jugo,
+las partículas y el sonido, sin mover el encuadre. La **dificultad sube** con los
+lanzamientos: las frutas salen más seguidas, con más velocidad horizontal y con más
+probabilidad de bomba. El radio de corte tiene un margen extra del 15 % para que el
+tajo sea más indulgente.
 
-**Recursos incluidos:** los cuatro PNG de `src/graphics/assets/` y la tipografía
+Cada corte, explosión, fruta perdida y fin de partida reproduce su **efecto de
+sonido** (cortes con tono ligeramente variable). Si no hay dispositivo de audio
+disponible, el juego arranca igual y continúa en silencio.
+
+**Recursos incluidos:** los cuatro PNG de `src/graphics/assets/`, la tipografía
 `fonts/ZenAntique-Regular.ttf` (SIL Open Font License 1.1, ver
-`src/graphics/assets/fonts/OFL.txt`). Las texturas se registran en un `AssetManager`
-(`std::unordered_map`) y se consultan por identificador (`bg_outside`, `bg_room`, …).
-`AssetPaths` los encuentra aunque el ejecutable se lance desde `build/` o `build/bin/`.
+`src/graphics/assets/fonts/OFL.txt`) y los WAV de `sounds/` (generados
+proceduralmente; se regeneran con `python3 tools/generate_sounds.py`, ver
+`src/graphics/assets/sounds/README.md`). Las texturas y los sonidos se registran en
+un `AssetManager` (`std::unordered_map`) y se consultan por identificador
+(`bg_outside`, `sfx_slice`, …). `AssetPaths` los encuentra aunque el ejecutable se
+lance desde `build/` o `build/bin/`.
 
 ---
 
@@ -238,6 +249,9 @@ indulgente.
 | `GLFW/glfw3.h: No such file or directory` | Faltan los submódulos: `git submodule update --init --recursive`. |
 | `Could not find a package configuration file ... Freetype` | Instala FreeType (`libfreetype-dev`, `freetype-devel`, `freetype2` o `brew install freetype`) y vuelve a configurar CMake. |
 | `[TextRenderer] No se pudo cargar la fuente` | Falta `src/graphics/assets/fonts/ZenAntique-Regular.ttf`; comprueba que el directorio `assets/` esté completo. |
+| `[AudioEngine] No se pudo inicializar el dispositivo de audio` | No hay servidor/dispositivo de audio: el juego sigue en silencio. Comprueba `pactl info` (PulseAudio/PipeWire), `wpctl status` o el volumen del sistema. |
+| `[AssetManager] No se pudo registrar el sonido ...` | Falta el WAV o `src/graphics/assets/sounds/` está incompleto; revisa la ruta y vuelve a compilar. |
+| El juego arranca sin sonido | El motor de audio falló o el volumen está a cero; revisa la salida de consola y el mezclador del sistema. |
 | Se cambió de Python/venv y el build falla | `rm -rf build` y vuelve a configurar con el entorno correcto. |
 
 ---

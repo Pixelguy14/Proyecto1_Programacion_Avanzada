@@ -41,6 +41,9 @@ find_package(OpenGL REQUIRED)
 # FreeType – rasterizado de la tipografía del HUD (Sprint 4)
 find_package(Freetype REQUIRED)
 
+# Hilos y carga dinámica – miniaudio los usa en Linux/BSD (Sprint 5)
+find_package(Threads REQUIRED)
+
 # ------------------------------------------------------------
 # Fuentes del proyecto
 # ------------------------------------------------------------
@@ -59,6 +62,7 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/external/stb
+    ${PROJECT_SOURCE_DIR}/external/miniaudio
 )
 
 # Ruta absoluta del código fuente: AssetPaths la usa para encontrar los PNG y
@@ -92,7 +96,15 @@ target_link_libraries(${PROJECT_NAME}
     glm::glm
     OpenGL::GL
     Freetype::Freetype
+    Threads::Threads
+    ${CMAKE_DL_LIBS}
 )
+
+# miniaudio solo pide -lm en Linux/BSD; en macOS y Windows enlaza sus APIs en
+# tiempo de ejecución, así que no hacen falta frameworks extra.
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE m)
+endif()
 
 # ------------------------------------------------------------
 # Directorio de salida

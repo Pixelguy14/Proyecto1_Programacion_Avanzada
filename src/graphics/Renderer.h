@@ -124,16 +124,6 @@ public:
      */
     void drawTrail(const std::vector<TrailPoint>& points, const glm::vec4& color);
 
-    /**
-     * @brief Desplaza la cámara sin cambiar el tamaño lógico de la pantalla.
-     * @param offset Desplazamiento en píxeles (positivo = escena a la derecha/arriba).
-     *
-     * Se usa para el screen shake: el llamador activa el desplazamiento antes
-     * de dibujar la escena y lo vuelve a (0, 0) antes de la UI, de modo que el
-     * HUD no se mueve. La proyección se reconstruye solo cuando el valor cambia.
-     */
-    void setViewOffset(const glm::vec2& offset);
-
 private:
     /**
      * @brief Compila el shader de primitivas sólidas (círculo/rectángulo).
@@ -206,8 +196,4 @@ private:
     int m_textureModelLocation = -1;
     int m_textureAlphaLocation = -1;
     int m_textureSamplerLocation = -1;
-
-    int m_screenWidth = 0;       ///< Ancho lógico usado por la proyección.
-    int m_screenHeight = 0;      ///< Alto lógico usado por la proyección.
-    glm::vec2 m_viewOffset{0.0f};  ///< Desplazamiento de cámara (screen shake).
 };

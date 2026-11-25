@@ -1,4 +1,6 @@
+#include "audio/AudioEngine.h"
 #include "core/AssetManager.h"
+#include "core/AssetPaths.h"
 #include "core/Input.h"
 #include "core/Window.h"
 #include "game/GameSession.h"
@@ -8,20 +10,20 @@
 #include "graphics/Renderer.h"
 #include "math/Collision.h"
 
-#include <glm/glm.hpp>
-
 #include <algorithm>
 #include <iostream>
 
 /**
  * @file main.cpp
- * @brief Punto de entrada y máquina de estados del juego (Sprints 1–4).
+ * @brief Punto de entrada y máquina de estados del juego (Sprints 1–5).
  *
  * ## Jerarquía
  *   main()
  *     ├── Window        ventana, contexto OpenGL, tiempo y eventos
  *     ├── Input         mouse y teclado mediante callbacks GLFW
  *     ├── Renderer      primitivas 2D y texturas
+ *     ├── AudioEngine   motor de audio (miniaudio)
+ *     ├── AssetManager  texturas y sonidos por identificador
  *     ├── Background    cuatro escenarios con crossfade
  *     ├── GameSession   spawner, entidades, espada, puntaje y vidas
  *     ├── GameUi        tipografía, HUD y overlays
@@ -185,15 +187,8 @@ void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& b
         window.clear();
         background.render(renderer);
 
-        // En pausa y game over se congela la escena, pero se sigue dibujando.
-        // El screen shake solo se aplica a la escena jugable; el HUD queda fijo.
         if (state != GameState::kMenu) {
-            const bool shakeActive = state == GameState::kPlaying
-                || state == GameState::kGameOver;
-            renderer.setViewOffset(shakeActive ? session.screenShakeOffset()
-                                               : glm::vec2{0.0f});
             session.render(renderer);
-            renderer.setViewOffset(glm::vec2{0.0f});
         }
 
         switch (state) {
@@ -244,6 +239,11 @@ int main() {
         return 1;
     }
 
+    AudioEngine audio;
+    if (!audio.init()) {
+        std::cerr << "[main] Audio no disponible; el juego seguira en silencio." << std::endl;
+    }
+
     AssetManager assets;
 
     Background background;
@@ -251,10 +251,26 @@ int main() {
                          static_cast<float>(window.height()))) {
         std::cerr << "[main] Algunos fondos no se pudieron cargar." << std::endl;
     }
-    std::cout << "[main] Recursos: " << assets.textureCount() << " texturas." << std::endl;
+
+    struct SoundAsset {
+        const char* id;
+        const char* file;
+    };
+    const SoundAsset kSounds[] = {
+        {"sfx_slice", "sounds/slice.wav"},
+        {"sfx_bomb", "sounds/bomb.wav"},
+        {"sfx_miss", "sounds/miss.wav"},
+        {"sfx_gameover", "sounds/gameover.wav"},
+    };
+    for (const SoundAsset& soundAsset : kSounds) {
+        assets.loadSound(audio, soundAsset.id, AssetPaths::resolve(soundAsset.file));
+    }
+
+    std::cout << "[main] Recursos: " << assets.textureCount() << " texturas, "
+              << assets.soundCount() << " sonidos." << std::endl;
 
     GameSession session(input, static_cast<float>(window.width()),
-                        static_cast<float>(window.height()));
+                        static_cast<float>(window.height()), assets);
 
     std::cout << "[main] Colisiones: "
               << (Collision::usesAvx() ? "AVX" : "escalar") << std::endl;
@@ -268,6 +284,7 @@ int main() {
 
     ui.cleanup();
     assets.cleanup(renderer);
+    audio.shutdown();
     renderer.cleanup();
     window.terminate();
     return 0;

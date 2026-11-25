@@ -4,7 +4,6 @@
 #include "entities/Blade.h"
 #include "entities/Particle.h"
 #include "entities/Spawner.h"
-#include "graphics/ScreenShake.h"
 
 #include <memory>
 #include <random>
@@ -12,10 +11,11 @@
 
 class Input;
 class Renderer;
+class AssetManager;
 
 /**
  * @file GameSession.h
- * @brief Estado y reglas de una partida (Sprint 4).
+ * @brief Estado y reglas de una partida (Sprints 4–5).
  *
  * GameSession agrupa todo lo que existe solo mientras se juega: el spawner,
  * las entidades, la espada, las partículas, el puntaje y las vidas. El bucle
@@ -40,22 +40,24 @@ class Renderer;
  * Las partículas no participan en las reglas: no suman puntos, no restan vidas
  * y se eliminan solas al agotar su vida.
  *
- * ## Screen shake (Sprint 5)
- * La sesión también acumula pequeños impulsos de cámara al cortar frutas y uno
- * grande al explotar una bomba. `screenShakeOffset()` devuelve el
- * desplazamiento que el bucle aplica al Renderer mientras dibuja la escena.
+ * ## Audio (Sprint 5)
+ * Los efectos se piden al `AssetManager` por identificador: `sfx_slice` al
+ * cortar, `sfx_bomb` al explotar, `sfx_miss` al perder una fruta y
+ * `sfx_gameover` al quedarse sin vidas (salvo que el final sea por bomba).
  */
 class GameSession {
 public:
     /**
-     * @brief Crea una sesión ligada a la entrada y a la resolución lógica.
+     * @brief Crea una sesión ligada a la entrada, a la resolución y a los recursos.
      * @param input        Entrada de la que la espada lee el mouse.
      * @param screenWidth  Ancho de la pantalla en píxeles.
      * @param screenHeight Alto de la pantalla en píxeles.
+     * @param assets       Manager de texturas y sonidos.
      *
-     * La referencia a `input` debe sobrevivir a la sesión.
+     * Las referencias a `input` y `assets` deben sobrevivir a la sesión.
      */
-    GameSession(const Input& input, float screenWidth, float screenHeight);
+    GameSession(const Input& input, float screenWidth, float screenHeight,
+                AssetManager& assets);
 
     /**
      * @brief Reinicia la partida: vacía entidades y restaura puntaje y vidas.
@@ -102,9 +104,6 @@ public:
 
     /// @return true si la partida terminó porque el jugador cortó una bomba.
     bool endedByBomb() const { return m_bombExploded; }
-
-    /// @return Desplazamiento actual del screen shake en píxeles.
-    const glm::vec2& screenShakeOffset() const { return m_shake.offset(); }
 
 private:
     /// Contenedor polimórfico de entidades; posee los objetos con unique_ptr.
@@ -190,7 +189,7 @@ private:
     float m_height;              ///< Alto lógico de la pantalla.
     Spawner m_spawner;           ///< Generador de frutas y bombas.
     Blade m_blade;               ///< Espada ligada a la entrada.
-    ScreenShake m_shake;         ///< Impulsos de cámara (Sprint 5).
+    AssetManager& m_assets;      ///< Manager de texturas y sonidos.
     GameObjectList m_objects;    ///< Frutas y mitades activas.
     ParticleList m_particles;    ///< Jugo y chispas (solo visuales).
     std::mt19937 m_rng;          ///< Generador para la variación de partículas.

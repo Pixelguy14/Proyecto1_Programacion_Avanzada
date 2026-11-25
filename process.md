@@ -477,17 +477,21 @@ bombas y detección de colisiones acelerada con AVX.
 - Pulido de animaciones y efectos finales.
 
 ## Sprint 5 – Polish, Resources & Juice
-**Goal:** Cerrar el juego con gestión de recursos, screen shake, dificultad progresiva,
-audio y frutas 3D low-poly.
+**Goal:** Cerrar el juego con gestión de recursos, dificultad progresiva, audio y
+frutas 3D low-poly.
 
-> **Fase A terminada:** AssetManager con STL, screen shake y ajuste de dificultad.
-> Las fases B (audio) y C (frutas 3D) quedan pendientes.
+> **Fases A y B terminadas:** AssetManager con STL, dificultad progresiva y audio
+> con miniaudio. El screen shake se descartó por completo. Queda la fase C
+> (frutas 3D low-poly).
 
 ### Tasks
 1. Registrar texturas en un `AssetManager` con `std::unordered_map`.
-2. Aplicar screen shake al cortar frutas y al explotar bombas.
+2. Evaluar el screen shake y descartarlo si se percibe como jitter.
 3. Ajustar el radio de corte y la curva de dificultad.
 4. Documentar el mapeo intencional de fondos (`kRoom` → dojo, `kInside` → recámara).
+5. Integrar miniaudio y un pool de voces por efecto.
+6. Registrar y reproducir sonidos desde el `AssetManager`.
+7. Disparar efectos de corte, bomba, fruta perdida y game over.
 
 ### Implementación – Fase A
 - `src/core/AssetManager.h/.cpp`
@@ -501,18 +505,9 @@ audio y frutas 3D low-poly.
   - **Mapeo intencional:** `kRoom` (partida) usa `dojo_inside.png`, el salón del
     dojo, y `kInside` (pausa) usa `dojo_room.png`, la recámara. Se documenta para
     que no se confunda con un cruce accidental.
-- `src/graphics/ScreenShake.h/.cpp`
-  - Impulsos acumulables con tope de 32 px y decaimiento lineal de 70 px/s.
-  - Jitter aleatorio por frame y `reset()` para reinicios.
-- `src/graphics/Renderer.h/.cpp`
-  - `setViewOffset()` reconstruye la proyección con una traslación en píxeles; el HUD
-    se dibuja con offset cero.
 - `src/game/GameSession.h/.cpp`
-  - `ScreenShake m_shake`: 3.5 px por fruta cortada, 24 px por bomba y 5 px por fruta
-    perdida.
-  - `screenShakeOffset()` lo consume el bucle principal.
   - `kCutRadiusFactor = 1.15f` hace el tajo un poco más indulgente.
-  - `updateEffects()` también decae el shake en GameOver.
+  - `updateEffects()` mantiene viva la explosión de la bomba en GameOver.
 - `src/entities/Spawner.h/.cpp`
   - `difficulty()` va de 0 a 1 en 30 lanzamientos.
   - El intervalo baja de 0.55–1.15 s a 0.32–0.80 s.
@@ -520,13 +515,74 @@ audio y frutas 3D low-poly.
   - La probabilidad de bomba sube de 16 % a 28 %.
 - `src/main.cpp`
   - `AssetManager assets;` compartido con `Background`.
-  - Aplica `setViewOffset()` solo en Playing/GameOver y lo vuelve a cero antes de la UI.
   - Registra en consola el número de texturas y la ruta de colisiones.
+
+### Implementación – Fase B
+- `external/miniaudio/miniaudio.h`
+  - Versión v0.11.26 (2026-10-31), *header-only*, dominio público / MIT-0.
+  - Se enlaza en tiempo de ejecución con los backends del sistema; en Linux solo
+    necesita `-ldl`, `-lpthread` y `-lm`.
+- `src/audio/AudioEngine.h/.cpp`
+  - PIMPL sobre `ma_engine`: `init()`, `shutdown()`, `setMasterVolume()` y
+    `ready()`.
+  - `MINIAUDIO_IMPLEMENTATION` se define una sola vez en el `.cpp`.
+  - Si no hay dispositivo de audio, `init()` devuelve false y el juego sigue en
+    silencio.
+- `src/audio/Sound.h/.cpp`
+  - PIMPL sobre miniaudio para no exponer su cabecera de 4 MB.
+  - Cuatro voces por efecto (`MA_SOUND_FLAG_DECODE`), elegidas en round-robin;
+    si todas suenan, se reutiliza la siguiente.
+  - `play(volume, pitch)` reinicia la voz desde el inicio y aplica tono variable.
+- `src/core/AssetManager.h/.cpp`
+  - Segunda tabla hash `std::unordered_map<std::string, std::unique_ptr<Sound>>`.
+  - `loadSound()`, `sound()`, `hasSound()` y `playSound()`.
+  - `cleanup()` libera sonidos antes que texturas y debe ejecutarse antes de
+    `AudioEngine::shutdown()`.
+- `src/game/GameSession.h/.cpp`
+  - Recibe `AssetManager&` y dispara:
+    - `sfx_slice` con tono 0.90–1.15 al cortar,
+    - `sfx_bomb` al explotar una bomba,
+    - `sfx_miss` al perder una fruta,
+    - `sfx_gameover` al quedarse sin vidas (se omite si el final fue por bomba).
+- `src/main.cpp`
+  - `AudioEngine` se declara antes del `AssetManager` para que lo sobreviva.
+  - Carga los cuatro WAV y registra `[main] Recursos: 4 texturas, 4 sonidos.`
+- `CMakeLists.txt`
+  - Include de `external/miniaudio`, `Threads::Threads`, `${CMAKE_DL_LIBS}` y `m`
+    en Linux/BSD.
+- `src/graphics/assets/sounds/`
+  - `slice.wav`, `bomb.wav`, `miss.wav`, `gameover.wav` (WAV PCM mono 16 bits,
+    44.1 kHz), generados proceduralmente para evitar licencias de terceros.
+- `tools/generate_sounds.py`
+  - Regenera los cuatro WAV con la biblioteca estándar de Python (sin numpy) y de
+    forma determinista.
+
+### Checklist – Fase B
+- [x] miniaudio integrado como librería header-only.
+- [x] Motor de audio con degradación silenciosa si falla el dispositivo.
+- [x] Pool de 4 voces por efecto para cortes solapados.
+- [x] Sonidos de corte, bomba, fruta perdida y game over.
+- [x] `AssetManager` registra y reproduce sonidos por identificador.
+- [x] WAVs generados y documentados en `sounds/README.md`.
+- [x] Compila sin advertencias (`-Wall -Wextra -Wpedantic`).
+
+### Decisiones de diseño – Fase B
+- **miniaudio header-only**: evita instalar SDL/OpenAL y enlaza el backend en
+  tiempo de ejecución; en Linux solo pide `dl`, `pthread` y `m`.
+- **PIMPL en `AudioEngine` y `Sound`**: miniaudio pesa 4 MB y no debe incluirse
+  en cada unidad de compilación.
+- **Pool de 4 voces**: un único `ma_sound` se cortaría al reutilizarlo; cuatro
+  voces cubren los cortes rápidos sin crear sonidos nuevos cada frame.
+- **WAVs procedurales**: evitan licencias de terceros y mantienen el repositorio
+  autónomo; la receta está en `sounds/README.md`.
+- **Sin sting de game over tras una bomba**: la explosión ya cierra la partida;
+  añadir otro sonido resultaría redundante.
 
 ### Checklist – Fase A
 - [x] AssetManager con tabla hash de la STL.
 - [x] Background usa identificadores y ya no posee texturas.
-- [x] Screen shake en cortes, bombas y frutas perdidas.
+- [x] Screen shake descartado por completo; el feedback viene de jugo, partículas
+  y sonido.
 - [x] Radio de corte más indulgente.
 - [x] Dificultad progresiva (frecuencia, velocidad y bombas).
 - [x] Mapeo intencional `kRoom` → dojo e `kInside` → recámara documentado.
@@ -537,11 +593,34 @@ audio y frutas 3D low-poly.
 - Ejecución real: `[main] Recursos: 4 texturas.` y `[main] Colisiones: AVX`.
 - Capturas offscreen de los cuatro fondos: `room` muestra el salón del dojo e
   `inside` la recámara, confirmando el mapeo intencional.
-- Pendiente: revisar el feel del shake en una sesión jugada.
 
-### Pendiente – Fases B y C
-- **Fase B:** audio con miniaudio y efectos de corte, bomba y game over.
-- **Fase C:** frutas 3D low-poly con mallas procedurales, luz y color por vértice.
+### Verificación – Fase B
+- Compilación limpia con `-Wall -Wextra -Wpedantic`.
+- Ejecución real: `[main] Recursos: 4 texturas, 4 sonidos.` y sin errores de
+  miniaudio.
+- Test temporal de audio: carga de `slice.wav`, seis reproducciones solapadas con
+  tono variable, explosión de `bomb.wav` y liberación del motor sin errores.
+- Niveles comprobados con `ffmpeg volumedetect`: picos entre −0.9 y −3.1 dB, sin
+  clipping.
+- La verificación auditiva final queda para la máquina del usuario.
+
+### Decisión sobre el screen shake (posterior a la Fase B)
+- **Síntoma:** al cortar, la escena vibraba y parecía un glitch entre cada
+  corte/sonido.
+- **Diagnóstico:** una bandera temporal de diagnóstico (ya eliminada) que
+  desactivaba el shake eliminaba el jitter; desactivar el audio no. El audio quedó
+  descartado con una prueba de 2000 reproducciones: `Sound::play()` mide ~0.1 µs
+  de media y 3.1 µs como máximo.
+- **Decisión:** se eliminó el screen shake **por completo** (`ScreenShake`,
+  `Renderer::setViewOffset` y las banderas de diagnóstico). El feedback de los
+  cortes, bombas y errores viene del jugo, las partículas y el sonido.
+
+### Pendiente – Fase C
+- **Frutas 3D low-poly:** mallas procedurales (melón, manzana, naranja, limón y
+  plátano), normales planas, color por vértice y rotación en Y.
+- Decidir si las mitades (`FruitHalf`) también pasan a mallas 3D o conservan el
+  semicírculo 2D.
+- Estilo: flat shading limpio o estética PS1 con Gouraud/snapping (elegir uno).
 
 ---
 
@@ -549,6 +628,7 @@ audio y frutas 3D low-poly.
 - *The Nature of Code* – Daniel Shiffman.
 - OpenGL 4.6 Documentation.
 - GLFW, GLAD, GLM official docs.
+- miniaudio documentation (https://miniaud.io/docs/).
 
 ---
 

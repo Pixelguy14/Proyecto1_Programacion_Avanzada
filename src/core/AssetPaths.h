@@ -4,7 +4,7 @@
 
 /**
  * @file AssetPaths.h
- * @brief Localización de los recursos gráficos (imágenes y fuentes).
+ * @brief Localización de los recursos (imágenes, fuentes y sonidos).
  *
  * El ejecutable puede lanzarse desde el directorio del proyecto, desde
  * `build/` o desde `build/bin/`. En lugar de asumir un único directorio de
