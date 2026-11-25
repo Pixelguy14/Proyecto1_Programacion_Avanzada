@@ -9,6 +9,7 @@
 #include "stb_image.h"
 
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <vector>
 
@@ -31,10 +32,7 @@ namespace {
 /// Segmentos del círculo unitario: más segmentos = borde más suave.
 constexpr int kCircleSegments = 64;
 
-/// Segmentos del semicírculo unitario (mitad de fruta).
-constexpr int kSemicircleSegments = 40;
-
-/// π, usado para generar la malla del semicírculo.
+/// π, usado para generar la malla del círculo.
 constexpr float kPi = 3.14159265358979323846f;
 
 /// Distancia mínima para considerar válida una dirección en la estela.
@@ -125,6 +123,45 @@ out vec4 FragColor;
 
 void main() {
     FragColor = vec4(uColor.rgb, uColor.a * vAlpha);
+}
+)";
+
+/// Vertex shader de mallas 3D: posición, normal y color por vértice.
+const char* kMeshVertexSrc = R"(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec3 aColor;
+
+uniform mat4 uProjection;
+uniform mat4 uModel;
+uniform mat3 uNormalMatrix;
+
+out vec3 vNormal;
+out vec3 vColor;
+
+void main() {
+    vNormal = uNormalMatrix * aNormal;
+    vColor = aColor;
+    gl_Position = uProjection * uModel * vec4(aPos, 1.0);
+}
+)";
+
+/// Fragment shader de mallas 3D: luz direccional + ambiente sobre el color.
+const char* kMeshFragmentSrc = R"(
+#version 330 core
+in vec3 vNormal;
+in vec3 vColor;
+
+uniform vec3 uLightDirection;
+uniform float uAmbient;
+out vec4 FragColor;
+
+void main() {
+    vec3 normal = normalize(vNormal);
+    float diffuse = max(dot(normal, uLightDirection), 0.0);
+    vec3 color = vColor * (uAmbient + (1.0 - uAmbient) * diffuse);
+    FragColor = vec4(color, 1.0);
 }
 )";
 
@@ -277,29 +314,6 @@ std::vector<float> makeUnitCircleVertices() {
 }
 
 /**
- * @brief Genera los vértices de un semicírculo unitario (de 0 a π).
- *
- * El diámetro queda sobre el eje X y el cuerpo en el semieje positivo de Y.
- * El primer vértice es el centro (0,0) y los siguientes recorren el arco.
- * @return Vector intercalado (x, y) listo para subir a la GPU.
- */
-std::vector<float> makeUnitSemicircleVertices() {
-    std::vector<float> vertices;
-    vertices.reserve(static_cast<std::size_t>(kSemicircleSegments + 2) * 2);
-
-    vertices.push_back(0.0f);
-    vertices.push_back(0.0f);
-
-    for (int i = 0; i <= kSemicircleSegments; ++i) {
-        const float angle = kPi * static_cast<float>(i)
-                            / static_cast<float>(kSemicircleSegments);
-        vertices.push_back(std::cos(angle));
-        vertices.push_back(std::sin(angle));
-    }
-    return vertices;
-}
-
-/**
  * @brief Convierte una lista de puntos de estela en una cinta (triangle strip).
  * @param points Puntos ordenados del más antiguo al más reciente.
  * @return Vértices intercalados (x, y, alpha), dos por punto.
@@ -351,7 +365,8 @@ std::vector<float> buildTrailVertices(const std::vector<Renderer::TrailPoint>& p
 }  // namespace
 
 bool Renderer::init(int screenWidth, int screenHeight) {
-    if (!buildShaderProgram() || !buildTrailProgram() || !buildTextureProgram()) {
+    if (!buildShaderProgram() || !buildTrailProgram() || !buildTextureProgram()
+        || !buildMeshProgram()) {
         return false;
     }
 
@@ -400,12 +415,31 @@ bool Renderer::buildTextureProgram() {
     return true;
 }
 
+bool Renderer::buildMeshProgram() {
+    m_meshProgram = createProgram(kMeshVertexSrc, kMeshFragmentSrc);
+    if (m_meshProgram == 0) {
+        return false;
+    }
+
+    m_meshProjectionLocation = glGetUniformLocation(m_meshProgram, "uProjection");
+    m_meshModelLocation = glGetUniformLocation(m_meshProgram, "uModel");
+    m_meshNormalLocation = glGetUniformLocation(m_meshProgram, "uNormalMatrix");
+
+    glUseProgram(m_meshProgram);
+    glUniform3f(glGetUniformLocation(m_meshProgram, "uLightDirection"),
+                -0.35f, 0.65f, 0.70f);
+    glUniform1f(glGetUniformLocation(m_meshProgram, "uAmbient"), 0.38f);
+    return true;
+}
+
 void Renderer::uploadProjection(int screenWidth, int screenHeight) {
     // Mapea el espacio de pantalla (0,width) x (0,height) a NDC, con Y hacia arriba.
+    // El rango de Z es amplio para que las mallas 3D tengan profundidad; los
+    // elementos 2D se dibujan en z = 0 con el depth test desactivado.
     const glm::mat4 projection = glm::ortho(
         0.0f, static_cast<float>(screenWidth),
         0.0f, static_cast<float>(screenHeight),
-        -1.0f, 1.0f);
+        -1000.0f, 1000.0f);
 
     glUseProgram(m_shaderProgram);
     glUniformMatrix4fv(m_projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
@@ -415,6 +449,9 @@ void Renderer::uploadProjection(int screenWidth, int screenHeight) {
 
     glUseProgram(m_textureProgram);
     glUniformMatrix4fv(m_textureProjectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
+
+    glUseProgram(m_meshProgram);
+    glUniformMatrix4fv(m_meshProjectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
 }
 
 bool Renderer::setupGeometry() {
@@ -430,10 +467,6 @@ bool Renderer::setupGeometry() {
          1.0f,  1.0f,
     };
     uploadMesh(quadVertices, m_rectVAO, m_rectVBO);
-
-    const std::vector<float> semicircleVertices = makeUnitSemicircleVertices();
-    uploadMesh(semicircleVertices, m_semiVAO, m_semiVBO);
-    m_semiVertexCount = static_cast<unsigned int>(semicircleVertices.size() / 2);
 
     uploadTextureQuad(m_textureVAO, m_textureVBO);
 
@@ -453,11 +486,92 @@ bool Renderer::setupGeometry() {
     glEnableVertexAttribArray(1);
     glBindVertexArray(0);
 
+    // Polígono dinámico 2D para las mitades con silueta por fruta.
+    glGenVertexArrays(1, &m_polygonVAO);
+    glGenBuffers(1, &m_polygonVBO);
+    glBindVertexArray(m_polygonVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_polygonVBO);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
+
+    // Mallas low-poly de las frutas: se generan una vez y se reutilizan.
+    bool meshesReady = true;
+    for (std::size_t i = 0; i < m_meshes.size(); ++i) {
+        const MeshData data = makeFruitMesh(static_cast<FruitMeshId>(i));
+        if (!uploadMeshData(data, m_meshes[i])) {
+            meshesReady = false;
+        }
+    }
+
     return m_circleVAO != 0 && m_circleVBO != 0
         && m_rectVAO != 0 && m_rectVBO != 0
-        && m_semiVAO != 0 && m_semiVBO != 0
         && m_textureVAO != 0 && m_textureVBO != 0
-        && m_trailVAO != 0 && m_trailVBO != 0;
+        && m_trailVAO != 0 && m_trailVBO != 0
+        && m_polygonVAO != 0 && m_polygonVBO != 0
+        && meshesReady;
+}
+
+bool Renderer::uploadMeshData(const MeshData& data, Mesh& mesh) {
+    if (data.vertices.empty() || data.indices.empty()) {
+        return false;
+    }
+
+    glGenVertexArrays(1, &mesh.vao);
+    glGenBuffers(1, &mesh.vbo);
+    glGenBuffers(1, &mesh.ebo);
+
+    glBindVertexArray(mesh.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(data.vertices.size() * sizeof(MeshVertex)),
+                 data.vertices.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(data.indices.size() * sizeof(std::uint32_t)),
+                 data.indices.data(), GL_STATIC_DRAW);
+
+    const auto stride = static_cast<GLsizei>(sizeof(MeshVertex));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<const void*>(offsetof(MeshVertex, position)));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<const void*>(offsetof(MeshVertex, normal)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<const void*>(offsetof(MeshVertex, color)));
+    glEnableVertexAttribArray(2);
+
+    glBindVertexArray(0);
+    mesh.indexCount = data.indices.size();
+    return mesh.valid();
+}
+
+void Renderer::begin3D() {
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+}
+
+void Renderer::end3D() {
+    glDisable(GL_DEPTH_TEST);
+}
+
+void Renderer::drawMesh(FruitMeshId id, const glm::mat4& model) {
+    const auto index = static_cast<std::size_t>(id);
+    if (index >= m_meshes.size() || !m_meshes[index].valid()) {
+        return;
+    }
+
+    const glm::mat3 normalMatrix = glm::mat3(glm::transpose(glm::inverse(model)));
+    glUseProgram(m_meshProgram);
+    glUniformMatrix4fv(m_meshModelLocation, 1, GL_FALSE, glm::value_ptr(model));
+    glUniformMatrix3fv(m_meshNormalLocation, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+
+    glBindVertexArray(m_meshes[index].vao);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_meshes[index].indexCount),
+                   GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
 }
 
 Texture Renderer::loadTexture(const std::string& path) {
@@ -540,13 +654,37 @@ void Renderer::drawRect(const glm::vec2& center, const glm::vec2& size,
     drawPrimitive(m_rectVAO, 4, GL_TRIANGLE_STRIP, model, glm::vec4(color, alpha));
 }
 
-void Renderer::drawSemicircle(const glm::vec2& center, float radius, float angleRadians,
-                              const glm::vec3& color, float alpha) {
+void Renderer::drawPolygon(const std::vector<glm::vec2>& vertices, const glm::vec2& center,
+                           float angleRadians, float scale, const glm::vec3& color,
+                           float alpha) {
+    if (vertices.size() < 3) {
+        return;
+    }
+
+    glm::vec2 centroid{0.0f};
+    for (const glm::vec2& vertex : vertices) {
+        centroid += vertex;
+    }
+    centroid /= static_cast<float>(vertices.size());
+
+    std::vector<glm::vec2> fan;
+    fan.reserve(vertices.size() + 2);
+    fan.push_back(centroid);
+    fan.insert(fan.end(), vertices.begin(), vertices.end());
+    fan.push_back(vertices.front());  // cierra el abanico sobre el borde plano
+
+    glBindVertexArray(m_polygonVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_polygonVBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(fan.size() * sizeof(glm::vec2)),
+                 fan.data(), GL_DYNAMIC_DRAW);
+    glBindVertexArray(0);
+
     glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(center, 0.0f));
     model = glm::rotate(model, angleRadians, glm::vec3(0.0f, 0.0f, 1.0f));
-    model = glm::scale(model, glm::vec3(radius, radius, 1.0f));
-    drawPrimitive(m_semiVAO, m_semiVertexCount, GL_TRIANGLE_FAN, model,
-                  glm::vec4(color, alpha));
+    model = glm::scale(model, glm::vec3(scale, scale, 1.0f));
+    drawPrimitive(m_polygonVAO, static_cast<unsigned int>(fan.size()), GL_TRIANGLE_FAN,
+                  model, glm::vec4(color, alpha));
 }
 
 void Renderer::drawTrail(const std::vector<TrailPoint>& points, const glm::vec4& color) {
@@ -587,6 +725,14 @@ void Renderer::cleanup() {
         glDeleteVertexArrays(1, &m_trailVAO);
         m_trailVAO = 0;
     }
+    if (m_polygonVBO != 0) {
+        glDeleteBuffers(1, &m_polygonVBO);
+        m_polygonVBO = 0;
+    }
+    if (m_polygonVAO != 0) {
+        glDeleteVertexArrays(1, &m_polygonVAO);
+        m_polygonVAO = 0;
+    }
     if (m_textureVBO != 0) {
         glDeleteBuffers(1, &m_textureVBO);
         m_textureVBO = 0;
@@ -611,13 +757,17 @@ void Renderer::cleanup() {
         glDeleteVertexArrays(1, &m_rectVAO);
         m_rectVAO = 0;
     }
-    if (m_semiVBO != 0) {
-        glDeleteBuffers(1, &m_semiVBO);
-        m_semiVBO = 0;
-    }
-    if (m_semiVAO != 0) {
-        glDeleteVertexArrays(1, &m_semiVAO);
-        m_semiVAO = 0;
+    for (Mesh& mesh : m_meshes) {
+        if (mesh.ebo != 0) {
+            glDeleteBuffers(1, &mesh.ebo);
+        }
+        if (mesh.vbo != 0) {
+            glDeleteBuffers(1, &mesh.vbo);
+        }
+        if (mesh.vao != 0) {
+            glDeleteVertexArrays(1, &mesh.vao);
+        }
+        mesh = Mesh{};
     }
     if (m_shaderProgram != 0) {
         glDeleteProgram(m_shaderProgram);
@@ -630,5 +780,9 @@ void Renderer::cleanup() {
     if (m_textureProgram != 0) {
         glDeleteProgram(m_textureProgram);
         m_textureProgram = 0;
+    }
+    if (m_meshProgram != 0) {
+        glDeleteProgram(m_meshProgram);
+        m_meshProgram = 0;
     }
 }

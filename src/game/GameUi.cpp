@@ -1,16 +1,18 @@
 #include "GameUi.h"
 
 #include "core/AssetPaths.h"
+#include "game/HighScoreTable.h"
 #include "graphics/Renderer.h"
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <iostream>
 #include <string>
 
 /**
  * @file GameUi.cpp
- * @brief Composición de textos y overlays por estado.
+ * @brief Composición de textos, overlays y récords por estado.
  */
 
 namespace {
@@ -32,6 +34,9 @@ constexpr float kTitleScale = 2.6f;
 constexpr float kSubtitleScale = 0.95f;
 constexpr float kInstructionScale = 0.80f;
 constexpr float kHudScale = 0.75f;
+
+/// Separación entre la columna de nombres y la de puntajes.
+constexpr float kScoreColumnGap = 36.0f;
 
 /**
  * @brief Dibuja un velo semitransparente a pantalla completa.
@@ -105,7 +110,41 @@ void GameUi::renderHud(Renderer& renderer, int score, int lives) const {
                     kHudScale, livesColor);
 }
 
-void GameUi::renderMenu(Renderer& renderer) const {
+void GameUi::renderScoreTable(const HighScoreTable& highScores, float anchorX, float topY,
+                              float scale, float lineHeight, int highlightRank,
+                              bool rightAligned) const {
+    if (!m_text.ready() || highScores.entries().empty()) {
+        return;
+    }
+
+    const auto& entries = highScores.entries();
+    float maxLabelWidth = 0.0f;
+    float maxScoreWidth = 0.0f;
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        const std::string label = std::to_string(i + 1) + ". " + entries[i].name;
+        maxLabelWidth = std::max(maxLabelWidth, m_text.textWidth(label, scale));
+        maxScoreWidth = std::max(maxScoreWidth,
+                                 m_text.textWidth(std::to_string(entries[i].score), scale));
+    }
+
+    const float blockWidth = maxLabelWidth + kScoreColumnGap + maxScoreWidth;
+    const float startX = rightAligned ? anchorX - blockWidth : anchorX - blockWidth * 0.5f;
+
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        const int rank = static_cast<int>(i);
+        const std::string label = std::to_string(i + 1) + ". " + entries[i].name;
+        const std::string score = std::to_string(entries[i].score);
+        const glm::vec4 color =
+            rank == highlightRank ? kRed : (rank < 3 ? kGold : kCream);
+        const float y = topY - static_cast<float>(i) * lineHeight;
+
+        m_text.drawText(label, glm::vec2{startX, y}, scale, color);
+        const float scoreWidth = m_text.textWidth(score, scale);
+        m_text.drawText(score, glm::vec2{startX + blockWidth - scoreWidth, y}, scale, color);
+    }
+}
+
+void GameUi::renderMenu(Renderer& renderer, const HighScoreTable& highScores) const {
     drawOverlay(renderer, m_width, m_height, 0.30f);
 
     const float centerX = static_cast<float>(m_width) * 0.5f;
@@ -126,6 +165,35 @@ void GameUi::renderMenu(Renderer& renderer) const {
                            kInstructionScale, kCream);
     drawCenteredWithShadow("ESC   -   SALIR", glm::vec2{centerX, 330.0f},
                            kInstructionScale, kCream);
+
+    if (!m_text.ready()) {
+        return;
+    }
+
+    // Panel del top 10 en la esquina superior derecha.
+    const glm::vec2 panelCenter{
+        static_cast<float>(m_width) - 30.0f - 235.0f,
+        static_cast<float>(m_height) - 30.0f - 235.0f,
+    };
+    renderer.drawRect(panelCenter, glm::vec2{470.0f, 470.0f}, 0.0f,
+                      glm::vec3{0.02f, 0.02f, 0.03f}, 0.45f);
+
+    const float rightX = static_cast<float>(m_width) - 52.0f;
+    const std::string title = "TOP 10";
+    const float titleWidth = m_text.textWidth(title, 0.72f);
+    m_text.drawText(title,
+                    glm::vec2{rightX - titleWidth, static_cast<float>(m_height) - 58.0f},
+                    0.72f, kGold);
+
+    const float listTop = static_cast<float>(m_height) - 112.0f;
+    if (highScores.entries().empty()) {
+        const std::string empty = "SIN RECORDS";
+        m_text.drawText(empty,
+                        glm::vec2{rightX - m_text.textWidth(empty, 0.55f), listTop},
+                        0.55f, kCream);
+    } else {
+        renderScoreTable(highScores, rightX, listTop, 0.55f, 34.0f, -1, true);
+    }
 }
 
 void GameUi::renderPaused(Renderer& renderer) const {
@@ -142,22 +210,50 @@ void GameUi::renderPaused(Renderer& renderer) const {
                            kInstructionScale, kCream);
 }
 
-void GameUi::renderGameOver(Renderer& renderer, int score, bool bombExploded) const {
+void GameUi::renderNameEntry(Renderer& renderer, int score, const std::string& name) const {
+    drawOverlay(renderer, m_width, m_height, 0.72f);
+
+    const float centerX = static_cast<float>(m_width) * 0.5f;
+    drawCenteredWithShadow("GAME OVER", glm::vec2{centerX, 900.0f}, 2.0f, kRed);
+    drawCenteredWithShadow("PUNTOS  " + std::to_string(score),
+                           glm::vec2{centerX, 800.0f}, 1.0f, kGold);
+    drawCenteredWithShadow("NUEVO RECORD", glm::vec2{centerX, 700.0f}, 1.1f, kGold);
+    drawCenteredWithShadow("ESCRIBE TU NOMBRE", glm::vec2{centerX, 610.0f},
+                           0.85f, kCream);
+    drawCenteredWithShadow(name + "_", glm::vec2{centerX, 540.0f}, 1.6f, kCream);
+    drawCenteredWithShadow("MAX 10 LETRAS", glm::vec2{centerX, 420.0f}, 0.60f, kGold);
+
+    drawCenteredWithShadow("ENTER   -   GUARDAR", glm::vec2{centerX, 320.0f},
+                           0.75f, kCream);
+    drawCenteredWithShadow("ESC   -   OMITIR", glm::vec2{centerX, 260.0f},
+                           0.70f, kCream);
+    drawCenteredWithShadow("BACKSPACE   -   BORRAR", glm::vec2{centerX, 200.0f},
+                           0.65f, kCream);
+}
+
+void GameUi::renderGameOver(Renderer& renderer, int score, bool bombExploded,
+                            const HighScoreTable& highScores, int highlightRank) const {
     drawOverlay(renderer, m_width, m_height, 0.68f);
 
     const float centerX = static_cast<float>(m_width) * 0.5f;
-    drawCenteredWithShadow("GAME OVER", glm::vec2{centerX, 730.0f}, 2.4f, kRed);
+    drawCenteredWithShadow("GAME OVER", glm::vec2{centerX, 950.0f}, 2.2f, kRed);
 
     if (bombExploded) {
-        drawCenteredWithShadow("CORTASTE UNA BOMBA", glm::vec2{centerX, 605.0f},
+        drawCenteredWithShadow("CORTASTE UNA BOMBA", glm::vec2{centerX, 840.0f},
                                kSubtitleScale, kGold);
     }
 
-    const std::string scoreText = "PUNTOS  " + std::to_string(score);
-    drawCenteredWithShadow(scoreText, glm::vec2{centerX, 510.0f}, 1.15f, kGold);
+    drawCenteredWithShadow("PUNTOS  " + std::to_string(score),
+                           glm::vec2{centerX, 780.0f}, 1.0f, kGold);
+    drawCenteredWithShadow("TOP 10", glm::vec2{centerX, 700.0f}, 0.75f, kGold);
+
+    if (highScores.entries().empty()) {
+        drawCenteredWithShadow("SIN RECORDS", glm::vec2{centerX, 620.0f}, 0.80f, kCream);
+    } else {
+        renderScoreTable(highScores, centerX, 650.0f, 0.62f, 40.0f, highlightRank, false);
+    }
 
     drawCenteredWithShadow("ENTER / ESPACIO   -   JUGAR DE NUEVO",
-                           glm::vec2{centerX, 380.0f}, kInstructionScale, kCream);
-    drawCenteredWithShadow("ESC   -   MENU", glm::vec2{centerX, 310.0f},
-                           kInstructionScale, kCream);
+                           glm::vec2{centerX, 160.0f}, 0.70f, kCream);
+    drawCenteredWithShadow("ESC   -   MENU", glm::vec2{centerX, 100.0f}, 0.70f, kCream);
 }

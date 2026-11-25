@@ -160,7 +160,7 @@ int GameSession::sliceFruits() {
             halves.push_back(std::move(second));
         }
 
-        emitJuice(fruit->position(), fruit->color(), fruit->radius());
+        emitJuice(fruit->position(), fruit->fleshColor(), fruit->radius());
         // Pequeña variación de tono para que los cortes no suenen idénticos.
         m_assets.playSound("sfx_slice", kSliceVolume, randomFloat(0.90f, 1.15f));
         ++sliced;
@@ -272,12 +272,6 @@ void GameSession::emitExplosion(const Vector2D<float>& origin, float radius) {
     }
 }
 
-void GameSession::renderObjects(Renderer& renderer) {
-    for (const auto& object : m_objects) {
-        object->render(renderer);
-    }
-}
-
 void GameSession::renderParticles(Renderer& renderer) {
     for (const auto& particle : m_particles) {
         particle->render(renderer);
@@ -285,7 +279,22 @@ void GameSession::renderParticles(Renderer& renderer) {
 }
 
 void GameSession::render(Renderer& renderer) {
-    renderObjects(renderer);
+    // Pasada 3D: frutas con malla low-poly y depth test.
+    renderer.begin3D();
+    for (const auto& object : m_objects) {
+        if (object->uses3D()) {
+            object->render(renderer);
+        }
+    }
+    renderer.end3D();
+
+    // Pasada 2D: mitades, jugo, chispas y estela.
+    for (const auto& object : m_objects) {
+        if (!object->uses3D()) {
+            object->render(renderer);
+        }
+    }
+
     renderParticles(renderer);
     m_blade.render(renderer);
 }

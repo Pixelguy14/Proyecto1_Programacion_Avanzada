@@ -223,6 +223,8 @@ flying halves.
   - Nueva malla unitaria de semicírculo (0 a π, 40 segmentos) y
     `drawSemicircle(center, radius, angle, color)` con `GL_TRIANGLE_FAN`.
   - Liberación de `m_semiVAO`/`m_semiVBO` en `cleanup()`.
+  - **Actualizado en Sprint 5:** el semicírculo se reemplazó por siluetas 2D por
+    fruta con `Renderer::drawPolygon`; ver la Fase C.
 - `src/entities/Blade.h/.cpp`
   - `CutResult { bool hit; Vector2D<float> direction; }`.
   - `cutAt(center, radius)` recorre los segmentos del historial del más reciente al más
@@ -471,18 +473,17 @@ bombas y detección de colisiones acelerada con AVX.
 - Juego real ejecutado sin errores de carga de texturas ni de fuente; la consola
   muestra `[main] Colisiones: AVX`.
 
-### Pendiente (Sprint 5)
-- Sonido y música.
-- Dificultad progresiva (más bombas y menos intervalo con el puntaje).
-- Pulido de animaciones y efectos finales.
+### Pendiente (cubierto en Sprint 5)
+- Sonido y música → efectos integrados con miniaudio (Fase B).
+- Dificultad progresiva → implementada en `Spawner` (Fase A).
+- Pulido de animaciones y efectos → partículas, jugo y frutas 3D (Fases A/C).
 
 ## Sprint 5 – Polish, Resources & Juice
 **Goal:** Cerrar el juego con gestión de recursos, dificultad progresiva, audio y
 frutas 3D low-poly.
 
-> **Fases A y B terminadas:** AssetManager con STL, dificultad progresiva y audio
-> con miniaudio. El screen shake se descartó por completo. Queda la fase C
-> (frutas 3D low-poly).
+> **Fases A, B y C terminadas:** AssetManager con STL, dificultad progresiva, audio
+> con miniaudio y frutas 3D low-poly. El screen shake se descartó por completo.
 
 ### Tasks
 1. Registrar texturas en un `AssetManager` con `std::unordered_map`.
@@ -492,6 +493,9 @@ frutas 3D low-poly.
 5. Integrar miniaudio y un pool de voces por efecto.
 6. Registrar y reproducir sonidos desde el `AssetManager`.
 7. Disparar efectos de corte, bomba, fruta perdida y game over.
+8. Generar mallas 3D low-poly procedurales para cinco frutas y la bomba.
+9. Renderizar las frutas en una pasada 3D con depth test y flat shading.
+10. Mantener mitades, jugo, espada y HUD en la pasada 2D.
 
 ### Implementación – Fase A
 - `src/core/AssetManager.h/.cpp`
@@ -578,6 +582,73 @@ frutas 3D low-poly.
 - **Sin sting de game over tras una bomba**: la explosión ya cierra la partida;
   añadir otro sonido resultaría redundante.
 
+### Implementación – Fase C
+- `src/graphics/FruitMesh.h/.cpp`
+  - `FruitMeshId` (melón, manzana, naranja, limón, plátano, bomba) y `MeshData`
+    con posición, normal de cara y color por vértice.
+  - `fruitAppearance()` define cáscara y pulpa para el jugo y las mitades.
+  - Mallas procedurales: esferas de 10–12 sectores × 7–8 stacks, cilindros para
+    tallos/mecha, conos para las puntas del limón y un tubo curvado para el plátano.
+  - `addTriangle()` corrige la orientación de cada cara con un vector hacia fuera.
+- `src/graphics/Mesh.h`
+  - `Mesh { vao, vbo, ebo, indexCount }` como identificador de GPU.
+- `src/graphics/Renderer.h/.cpp`
+  - Shader de mallas con `uNormalMatrix`, luz direccional y ambiente.
+  - `uploadMeshData()`, `drawMesh()`, `begin3D()` y `end3D()`.
+  - `drawPolygon()` para las siluetas 2D de las mitades.
+  - La proyección ortográfica usa un rango de Z amplio; el depth test solo se
+    activa para las mallas.
+- `src/core/GameObject.h`
+  - `virtual bool uses3D() const` para separar las dos pasadas de dibujado.
+- `src/game/GameSession.cpp`
+  - `render()` dibuja primero las entidades 3D, luego las 2D, el jugo y la espada.
+- `src/entities/Fruit.h/.cpp`
+  - Guarda `FruitMeshId`, color de cáscara y de pulpa; la bomba activa `kBomb`
+    automáticamente.
+  - Modelo 3D: traslación a la posición, rotación Y (frutas) o Z (plátano/bomba),
+    inclinación X y escala por radio.
+  - El jugo usa el color de la pulpa.
+- `src/entities/FruitHalf.h/.cpp`
+  - Recibe cáscara, pulpa y tipo de fruta; dibuja una silueta 2D propia con
+    `Renderer::drawPolygon` (el plátano alargado, el limón estirado, etc.).
+- `src/entities/Spawner.h/.cpp`
+  - Elige un `FruitMeshId` al azar y usa `kBomb` para las bombas.
+- `src/core/Window.cpp`
+  - Solicita 24 bits de profundidad y limpia color + profundidad cada frame.
+
+### Checklist – Fase C
+- [x] Mallas procedurales de melón, manzana, naranja, limón, plátano y bomba.
+- [x] Flat shading con normales por cara y color por vértice.
+- [x] Luz direccional y ambiente en un shader propio.
+- [x] Pasada 3D con depth test y pasada 2D para el resto.
+- [x] Rotación 3D por fruta y escala según el radio.
+- [x] Mitades 2D con silueta por fruta, cáscara y pulpa propias.
+- [x] Compila sin advertencias (`-Wall -Wextra -Wpedantic`).
+- [x] Verificado con capturas offscreen.
+
+### Decisiones de diseño – Fase C
+- **Híbrido 2D/3D**: la física y la colisión siguen en 2D para no romper el corte;
+  solo el cuerpo de la fruta se dibuja en 3D.
+- **Mallas procedurales**: no hace falta Assimp ni archivos de modelo; son
+  deterministas y se generan una vez al arrancar.
+- **Flat shading**: normales por cara y color por vértice; refuerza el look low-poly.
+- **Mitades 2D con silueta por fruta**: el plátano se ve alargado, el limón
+  estirado y el melón ovalado; se mantiene el corte 2D porque unas mitades 3D
+  exigirían recortar la malla y añadir una tapa sin mejorar la lectura.
+- **Rotación Y para frutas, Z para plátano/bomba**: el plátano no pierde su silueta
+  al girar y la mecha de la bomba se balancea.
+- **Depth test solo en la pasada 3D**: el fondo, las mitades, el jugo y el HUD se
+  dibujan después en 2D, sin pelear con la profundidad.
+
+### Verificación – Fase C
+- Compilación limpia con `-Wall -Wextra -Wpedantic`.
+- Capturas offscreen:
+  - `build/sprint5_fruits_3d.png`: las seis mallas en cuadrícula.
+  - `build/sprint5_scene_3d.png`: fondo + frutas 3D + mitades/jugo 2D.
+  - `build/sprint5_halves_2d.png`: siluetas 2D por fruta (melón, manzana,
+    naranja, limón y plátano).
+- Juego real ejecutado sin errores de shader, malla ni profundidad.
+
 ### Checklist – Fase A
 - [x] AssetManager con tabla hash de la STL.
 - [x] Background usa identificadores y ya no posee texturas.
@@ -615,12 +686,87 @@ frutas 3D low-poly.
   `Renderer::setViewOffset` y las banderas de diagnóstico). El feedback de los
   cortes, bombas y errores viene del jugo, las partículas y el sonido.
 
-### Pendiente – Fase C
-- **Frutas 3D low-poly:** mallas procedurales (melón, manzana, naranja, limón y
-  plátano), normales planas, color por vértice y rotación en Y.
-- Decidir si las mitades (`FruitHalf`) también pasan a mallas 3D o conservan el
-  semicírculo 2D.
-- Estilo: flat shading limpio o estética PS1 con Gouraud/snapping (elegir uno).
+### Sprint 5 completo
+- Todas las fases (A, B y C) están cerradas.
+- El estilo elegido es **flat shading low-poly**, no Gouraud/PS1 con snapping.
+- Las mitades (`FruitHalf`) conservan el corte 2D con siluetas por fruta.
+- Ideas opcionales para más adelante: mitades 3D, más tipos de fruta y combos.
+
+## Extensión final – High Scores
+**Goal:** Guardar un top 10 persistente, mostrarlo en el menú y en el game over,
+y permitir teclear un nombre de hasta 10 caracteres al entrar al top.
+
+### Tasks
+1. Persistir el top 10 en el directorio de datos del usuario.
+2. Mostrar la tabla en la esquina superior derecha del menú.
+3. Mostrar el top 10 en la pantalla de game over.
+4. Añadir un estado de entrada de nombre (máximo 10 letras).
+5. Capturar texto con el callback de caracteres de GLFW.
+6. Resaltar el nuevo récord en la lista.
+
+### Implementación
+- `src/game/HighScoreTable.h/.cpp`
+  - Hasta 10 entradas `{score, name}` ordenadas de mayor a menor.
+  - `load()`, `save()`, `qualifies()`, `add()` y `sanitizeName()`.
+  - Ruta por plataforma:
+    - Linux: `$XDG_DATA_HOME/fruitninja/highscores.txt` o
+      `~/.local/share/fruitninja/highscores.txt`.
+    - macOS: `~/Library/Application Support/FruitNinja/highscores.txt`.
+    - Windows: `%APPDATA%\FruitNinja\highscores.txt`.
+  - Override `FRUITNINJA_HIGHSCORE_PATH`.
+  - Formato de texto `score<TAB>name`; las líneas inválidas se ignoran.
+  - Nombres en mayúsculas, alfanuméricos/espacio, máximo 10; vacío → `JUGADOR`.
+- `src/core/Input.h/.cpp`
+  - `glfwSetCharCallback` y `textInput()` por frame; solo ASCII 32–126.
+  - `beginFrame()` limpia texto y teclas.
+- `src/game/GameState.h`
+  - Nuevo estado `kNameEntry`; `Playing → NameEntry → GameOver` cuando el
+    puntaje entra al top.
+- `src/game/GameUi.h/.cpp`
+  - `renderMenu(..., highScores)`: panel semitransparente y top 10 arriba a la
+    derecha.
+  - `renderGameOver(..., highScores, highlightRank)`: top 10 centrado; el nuevo
+    récord se resalta en rojo y el top 3 en dorado.
+  - `renderNameEntry(..., score, name)`: título, puntaje, nombre con cursor e
+    instrucciones.
+  - Columnas de nombre y puntaje alineadas.
+- `src/main.cpp`
+  - Carga la tabla al inicio y la guarda al añadir un récord.
+  - La entrada de nombre usa `textInput()`, Backspace, Enter y Esc.
+  - Esc omite el guardado.
+  - El fondo de `kNameEntry` es la guardería, igual que game over.
+
+### Checklist – High Scores
+- [x] Top 10 persistente en el directorio de datos del usuario.
+- [x] Lista en la esquina superior derecha del menú.
+- [x] Top 10 en game over con el nuevo récord resaltado.
+- [x] Entrada de nombre de hasta 10 caracteres.
+- [x] Filtrado a letras/dígitos/espacio y mayúsculas.
+- [x] Compila sin advertencias (`-Wall -Wextra -Wpedantic`).
+- [x] Tabla y UI verificadas con pruebas y capturas.
+
+### Decisiones de diseño – High Scores
+- **Texto plano**: fácil de inspeccionar y editar, sin dependencias.
+- **Directorio de datos del usuario**: no ensucia el repositorio ni el build.
+- **Guardado inmediato**: el récord se escribe al pulsar Enter, sin esperar al
+  cierre del juego.
+- **Esc omite**: el jugador puede no guardar el puntaje; Enter usa `JUGADOR` si
+  el nombre está vacío.
+- **Nombre en mayúsculas**: uniformidad visual y compatibilidad con el atlas
+  ASCII.
+- **Destacado del nuevo récord**: `add()` devuelve la posición para pintarla en
+  rojo en el game over.
+
+### Verificación – High Scores
+- Prueba de `HighScoreTable`: orden, empates, límite de 10, `qualifies`, saneado
+  y round-trip a disco (`200/120/75/75/50/10`, recarga idéntica).
+- Capturas revisadas:
+  - `build/final_menu_scores.png`: menú con el top 10 arriba a la derecha.
+  - `build/final_gameover_scores.png`: top 10 en game over con el nuevo récord
+    resaltado.
+  - `build/final_name_entry.png`: nombre `PIXEL_` e instrucciones.
+- Compilación limpia con `-Wall -Wextra -Wpedantic`.
+- Juego ejecutado sin errores; la consola imprime la ruta del archivo.
 
 ---
 
@@ -629,6 +775,8 @@ frutas 3D low-poly.
 - OpenGL 4.6 Documentation.
 - GLFW, GLAD, GLM official docs.
 - miniaudio documentation (https://miniaud.io/docs/).
+- LearnOpenGL – Basic Lighting y modelos low-poly.
+- `documentacion2.md` – referencia de frutas low-poly y estética PS1.
 
 ---
 

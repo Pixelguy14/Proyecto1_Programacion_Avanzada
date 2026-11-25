@@ -9,15 +9,15 @@
 
 /**
  * @file Spawner.h
- * @brief Generador de frutas y bombas (Sprints 1–4).
+ * @brief Generador de frutas y bombas (Sprints 1–5).
  *
  * El Spawner decide *cuándo* y *cómo* nace un objeto: temporización aleatoria,
- * posición por debajo de la pantalla, velocidad de lanzamiento y color. No
- * almacena objetos; devuelve uno nuevo y la sesión se encarga de él.
+ * posición por debajo de la pantalla, velocidad de lanzamiento y tipo de fruta.
+ * No almacena objetos; devuelve uno nuevo y la sesión se encarga de él.
  *
- * Las frutas nacen con la bandera `FruitFlag::kActive`. A partir del Sprint 4
- * (parte 2), tras unos lanzamientos de gracia, una fracción de los objetos
- * nace con `FruitFlag::kBomb`; cortar una bomba termina la partida.
+ * Cada fruta nace con una malla low-poly (`FruitMeshId`) y la bandera
+ * `FruitFlag::kActive`. Tras unos lanzamientos de gracia, una fracción de los
+ * objetos nace como bomba (`FruitMeshId::kBomb`); cortar una termina la partida.
  *
  *   GameSession::update()
  *     └── Spawner::trySpawn()
@@ -79,10 +79,10 @@ private:
     float randomFloat(float min, float max);
 
     /**
-     * @brief Elige un color de la paleta de frutas.
-     * @return Color RGB en el rango [0, 1].
+     * @brief Elige un tipo de fruta al azar (sin bombas).
+     * @return Malla low-poly de melón, manzana, naranja, limón o plátano.
      */
-    glm::vec3 randomColor();
+    FruitMeshId randomFruitKind();
 
 private:
     std::mt19937 m_rng;               ///< Generador Mersenne Twister.

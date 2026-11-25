@@ -48,17 +48,6 @@ constexpr float kBombRadiusBonus = 1.08f;
 constexpr float kSpawnXMinFactor = 0.20f;
 constexpr float kSpawnXMaxFactor = 0.80f;
 
-/// Paleta de colores de fruta.
-const glm::vec3 kFruitPalette[] = {
-    {0.90f, 0.22f, 0.21f},  // sandía
-    {0.95f, 0.55f, 0.15f},  // naranja
-    {0.98f, 0.85f, 0.20f},  // limón
-    {0.45f, 0.75f, 0.25f},  // manzana verde
-    {0.72f, 0.30f, 0.60f},  // uva
-};
-constexpr int kFruitColorCount =
-    static_cast<int>(sizeof(kFruitPalette) / sizeof(kFruitPalette[0]));
-
 /**
  * @brief Calcula la velocidad inicial necesaria para alcanzar una altura dada.
  * @param apex Altura máxima sobre el punto de lanzamiento, en píxeles.
@@ -123,13 +112,9 @@ std::unique_ptr<Fruit> Spawner::spawnFruit() {
     };
 
     const float angularVelocity = randomFloat(kMinAngularSpeed, kMaxAngularSpeed);
-    const glm::vec3 color = bomb ? glm::vec3{0.08f, 0.08f, 0.09f} : randomColor();
+    const FruitMeshId meshId = bomb ? FruitMeshId::kBomb : randomFruitKind();
 
-    auto fruit = std::make_unique<Fruit>(position, velocity, radius, angularVelocity, color);
-    if (bomb) {
-        fruit->addFlag(FruitFlag::kBomb);
-    }
-    return fruit;
+    return std::make_unique<Fruit>(position, velocity, radius, angularVelocity, meshId);
 }
 
 bool Spawner::shouldSpawnBomb() {
@@ -151,7 +136,16 @@ float Spawner::randomFloat(float min, float max) {
     return distribution(m_rng);
 }
 
-glm::vec3 Spawner::randomColor() {
-    std::uniform_int_distribution<int> distribution(0, kFruitColorCount - 1);
-    return kFruitPalette[distribution(m_rng)];
+FruitMeshId Spawner::randomFruitKind() {
+    // Lista explícita de frutas: no depende del orden interno del enum.
+    static constexpr FruitMeshId kKinds[] = {
+        FruitMeshId::kMelon,
+        FruitMeshId::kApple,
+        FruitMeshId::kOrange,
+        FruitMeshId::kLemon,
+        FruitMeshId::kBanana,
+    };
+    constexpr int kCount = static_cast<int>(sizeof(kKinds) / sizeof(kKinds[0]));
+    std::uniform_int_distribution<int> distribution(0, kCount - 1);
+    return kKinds[distribution(m_rng)];
 }

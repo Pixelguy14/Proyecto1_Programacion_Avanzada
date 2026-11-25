@@ -90,6 +90,9 @@ public:
     /**
      * @brief Dibuja entidades, partículas y, encima, la estela de la espada.
      * @param renderer Renderer compartido.
+     *
+     * Primero dibuja las mallas 3D (frutas) con depth test; después las
+     * primitivas 2D (mitades, partículas y estela) para que queden encima.
      */
     void render(Renderer& renderer);
 
@@ -163,12 +166,6 @@ private:
      * @param radius Radio de la bomba.
      */
     void emitExplosion(const Vector2D<float>& origin, float radius);
-
-    /**
-     * @brief Dibuja todas las entidades de la lista.
-     * @param renderer Renderer compartido.
-     */
-    void renderObjects(Renderer& renderer);
 
     /**
      * @brief Dibuja las partículas activas.

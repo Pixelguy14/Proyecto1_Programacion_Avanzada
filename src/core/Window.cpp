@@ -57,6 +57,9 @@ bool Window::createWindow() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
+    // Buffer de profundidad para las mallas 3D de las frutas (Sprint 5).
+    glfwWindowHint(GLFW_DEPTH_BITS, 24);
+
     m_window = glfwCreateWindow(m_width, m_height, m_title.c_str(), nullptr, nullptr);
     if (m_window == nullptr) {
         std::cerr << "[Window] Failed to create GLFW window" << std::endl;
@@ -100,7 +103,7 @@ void Window::swapBuffers() {
 
 void Window::clear() {
     glClearColor(kClearR, kClearG, kClearB, kClearA);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 void Window::requestClose() {

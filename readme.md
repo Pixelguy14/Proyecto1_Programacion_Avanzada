@@ -3,11 +3,10 @@
 Clon de **Fruit Ninja** en C++17 con OpenGL 3.3 core, basado en *The Nature of Code*
 (cap. 2.6) y el trackeo del mouse.
 
-Estado actual: **Sprint 5 (Fase B) terminado** — `AssetManager` con tabla hash de la
-STL, dificultad progresiva, audio con miniaudio (corte, bomba, fruta perdida y game
-over) y mapeo intencional de fondos documentado. El screen shake se descartó porque
-se percibía como jitter. Falta la Fase C (frutas 3D low-poly). Ver
-[`process.md`](process.md) para el detalle.
+Estado actual: **Sprint 5 terminado** — `AssetManager` con tabla hash de la STL,
+dificultad progresiva, audio con miniaudio, frutas 3D low-poly con flat shading,
+top 10 persistente de puntajes y sin screen shake. La física y la colisión siguen
+siendo 2D. Ver [`process.md`](process.md) para el detalle.
 
 ---
 
@@ -191,7 +190,7 @@ menú principal sobre el fondo del dojo exterior. La partida usa el fondo de la
 habitación, la pausa el interior del dojo y el game over la guardería; cada cambio de
 estado hace un **crossfade** de 0.8 s.
 
-**Controles (Sprint 4):**
+**Controles:**
 
 | Tecla | Menú | Jugando | Pausa | Game Over |
 |---|---|---|---|---|
@@ -200,6 +199,15 @@ estado hace un **crossfade** de 0.8 s.
 | `P` | — | Pausar | Continuar | Volver al menú |
 | `R` | — | — | Reiniciar | Jugar de nuevo |
 | `M` | — | — | Volver al menú | — |
+
+**Nombre en un nuevo récord:**
+
+| Tecla | Acción |
+|---|---|
+| `A-Z`, `0-9`, `Espacio` | Añadir carácter (máximo 10) |
+| `Backspace` | Borrar el último carácter |
+| `Enter` | Guardar el récord |
+| `Esc` | Omitir la entrada (no se guarda) |
 
 Mueve el mouse por la ventana para dibujar la estela de la espada. El cursor del
 sistema se oculta y la estela se desvanece al detener el mouse. Si el recorrido
@@ -222,6 +230,28 @@ tajo sea más indulgente.
 Cada corte, explosión, fruta perdida y fin de partida reproduce su **efecto de
 sonido** (cortes con tono ligeramente variable). Si no hay dispositivo de audio
 disponible, el juego arranca igual y continúa en silencio.
+
+Las frutas se dibujan como **mallas 3D low-poly** procedurales (melón, manzana,
+naranja, limón, plátano y bomba) con flat shading, color por vértice y una luz
+direccional. La física y la colisión siguen siendo 2D; las mitades conservan el
+corte 2D con siluetas por fruta (plátano alargado, limón estirado, melón ovalado)
+y su cáscara y pulpa. El `Renderer` hace una pasada 3D con depth test para las
+frutas y una pasada 2D para mitades, jugo, espada y HUD. Las mallas se generan por
+código, así que no añaden archivos de modelo.
+
+**Récords:** el juego guarda un **top 10** y lo muestra en la esquina superior
+derecha del menú y en la pantalla de game over. Si tu puntaje entra al top 10,
+puedes teclear un nombre de hasta 10 letras (A-Z, 0-9 y espacio); el nuevo récord
+queda resaltado. El archivo se guarda en el directorio de datos del usuario:
+
+| Sistema | Ruta |
+|---|---|
+| Linux | `$XDG_DATA_HOME/fruitninja/highscores.txt` o `~/.local/share/fruitninja/highscores.txt` |
+| macOS | `~/Library/Application Support/FruitNinja/highscores.txt` |
+| Windows | `%APPDATA%\FruitNinja\highscores.txt` |
+
+La consola imprime la ruta exacta al arrancar (`[HighScores] Archivo: ...`). La
+variable `FRUITNINJA_HIGHSCORE_PATH` permite usar otra ruta.
 
 **Recursos incluidos:** los cuatro PNG de `src/graphics/assets/`, la tipografía
 `fonts/ZenAntique-Regular.ttf` (SIL Open Font License 1.1, ver
@@ -252,6 +282,7 @@ lance desde `build/` o `build/bin/`.
 | `[AudioEngine] No se pudo inicializar el dispositivo de audio` | No hay servidor/dispositivo de audio: el juego sigue en silencio. Comprueba `pactl info` (PulseAudio/PipeWire), `wpctl status` o el volumen del sistema. |
 | `[AssetManager] No se pudo registrar el sonido ...` | Falta el WAV o `src/graphics/assets/sounds/` está incompleto; revisa la ruta y vuelve a compilar. |
 | El juego arranca sin sonido | El motor de audio falló o el volumen está a cero; revisa la salida de consola y el mezclador del sistema. |
+| Los récords no se guardan | Revisa los permisos del directorio de datos del usuario; la consola imprime la ruta y el error de `[HighScores]`. |
 | Se cambió de Python/venv y el build falla | `rm -rf build` y vuelve a configurar con el entorno correcto. |
 
 ---

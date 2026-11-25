@@ -6,12 +6,15 @@
 #include "game/GameSession.h"
 #include "game/GameState.h"
 #include "game/GameUi.h"
+#include "game/HighScoreTable.h"
 #include "graphics/Background.h"
 #include "graphics/Renderer.h"
 #include "math/Collision.h"
 
 #include <algorithm>
+#include <cctype>
 #include <iostream>
+#include <string>
 
 /**
  * @file main.cpp
@@ -19,27 +22,33 @@
  *
  * ## Jerarquía
  *   main()
- *     ├── Window        ventana, contexto OpenGL, tiempo y eventos
- *     ├── Input         mouse y teclado mediante callbacks GLFW
- *     ├── Renderer      primitivas 2D y texturas
- *     ├── AudioEngine   motor de audio (miniaudio)
- *     ├── AssetManager  texturas y sonidos por identificador
- *     ├── Background    cuatro escenarios con crossfade
- *     ├── GameSession   spawner, entidades, espada, puntaje y vidas
- *     ├── GameUi        tipografía, HUD y overlays
- *     └── runGameLoop() máquina de estados
+ *     ├── Window         ventana, contexto OpenGL, tiempo y eventos
+ *     ├── Input          mouse y teclado mediante callbacks GLFW
+ *     ├── Renderer       primitivas 2D, texturas y mallas 3D
+ *     ├── AudioEngine    motor de audio (miniaudio)
+ *     ├── AssetManager   texturas y sonidos por identificador
+ *     ├── Background     cuatro escenarios con crossfade
+ *     ├── GameSession    spawner, entidades, espada, puntaje y vidas
+ *     ├── GameUi         tipografía, HUD, overlays y récords
+ *     ├── HighScoreTable top 10 persistente
+ *     └── runGameLoop()  máquina de estados
  *
  * ## Máquina de estados
  *   Menu ──Enter/Espacio──▶ Playing ──Esc/P──▶ Paused
  *     ▲                        │                  │
  *     │                        │ 0 vidas          │ Esc/P
  *     │                        ▼                  │
- *     └──────Esc──────────── GameOver ◀──────────┘
+ *     │                    NameEntry ─────────────┘
+ *     │                        │
+ *     │                        │ Enter/Esc
+ *     │                        ▼
+ *     └──────Esc──────────── GameOver
  *                              │
  *                              └──Enter/Espacio──▶ Playing
  *
- * Cada estado tiene su propio fondo (outside, room, inside, nursery) y su
- * propio conjunto de textos. Solo `Playing` avanza la simulación.
+ * `NameEntry` solo se visita cuando el puntaje entra al top 10. Cada estado
+ * tiene su propio fondo (outside, room, inside, nursery) y su conjunto de
+ * textos. Solo `Playing` avanza la simulación.
  */
 
 namespace {
@@ -75,6 +84,7 @@ BackgroundScene backgroundFor(GameState state) {
             return BackgroundScene::kRoom;
         case GameState::kPaused:
             return BackgroundScene::kInside;
+        case GameState::kNameEntry:
         case GameState::kGameOver:
             return BackgroundScene::kNursery;
     }
@@ -136,6 +146,10 @@ StateTransition transitionFor(GameState current, const Input& input, Window& win
                 return {GameState::kMenu, false};
             }
             break;
+
+        case GameState::kNameEntry:
+            // La captura del nombre se maneja directamente en runGameLoop().
+            break;
     }
 
     return {current, false};
@@ -149,11 +163,16 @@ StateTransition transitionFor(GameState current, const Input& input, Window& win
  * @param background Fondos ya cargados.
  * @param session    Sesión de juego reutilizable entre partidas.
  * @param ui         Textos y overlays ya inicializados.
+ * @param highScores Tabla persistente del top 10.
  */
 void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& background,
-                 GameSession& session, GameUi& ui) {
+                 GameSession& session, GameUi& ui, HighScoreTable& highScores) {
     GameState state = GameState::kMenu;
     background.setScene(backgroundFor(state), true);
+
+    std::string nameBuffer;
+    int pendingScore = 0;
+    int lastRank = -1;
 
     while (!window.shouldClose()) {
         input.beginFrame();
@@ -161,23 +180,60 @@ void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& b
 
         const float dt = std::min(window.updateDeltaTime(), kMaxFrameTime);
 
-        const StateTransition transition = transitionFor(state, input, window);
-        if (transition.state != state) {
-            if (transition.resetSession) {
-                session.reset();
+        if (state == GameState::kNameEntry) {
+            for (const char character : input.textInput()) {
+                if (nameBuffer.size() >= HighScoreTable::kMaxNameLength) {
+                    break;
+                }
+                const unsigned char value = static_cast<unsigned char>(character);
+                if (std::isalnum(value) != 0 || character == ' ') {
+                    nameBuffer.push_back(static_cast<char>(std::toupper(value)));
+                }
             }
-            state = transition.state;
+
+            if (input.wasKeyPressed(GLFW_KEY_BACKSPACE) && !nameBuffer.empty()) {
+                nameBuffer.pop_back();
+            }
+
+            if (input.wasKeyPressed(GLFW_KEY_ENTER)
+                || input.wasKeyPressed(GLFW_KEY_KP_ENTER)) {
+                lastRank = highScores.add(pendingScore, nameBuffer);
+                highScores.save();
+                state = GameState::kGameOver;
+            } else if (input.wasKeyPressed(GLFW_KEY_ESCAPE)) {
+                lastRank = -1;
+                state = GameState::kGameOver;
+            }
+        } else {
+            const StateTransition transition = transitionFor(state, input, window);
+            if (transition.state != state) {
+                if (transition.resetSession) {
+                    session.reset();
+                }
+                if (transition.resetSession || transition.state == GameState::kMenu) {
+                    lastRank = -1;
+                }
+                state = transition.state;
+            }
         }
 
         if (state == GameState::kPlaying) {
             session.update(dt);
             if (session.isGameOver()) {
-                state = GameState::kGameOver;
+                if (highScores.qualifies(session.score())) {
+                    pendingScore = session.score();
+                    nameBuffer.clear();
+                    lastRank = -1;
+                    state = GameState::kNameEntry;
+                } else {
+                    lastRank = -1;
+                    state = GameState::kGameOver;
+                }
             }
         }
 
         // La explosión de la bomba sigue animándose aunque la partida terminó.
-        if (state == GameState::kGameOver) {
+        if (state == GameState::kGameOver || state == GameState::kNameEntry) {
             session.updateEffects(dt);
         }
 
@@ -193,7 +249,7 @@ void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& b
 
         switch (state) {
             case GameState::kMenu:
-                ui.renderMenu(renderer);
+                ui.renderMenu(renderer, highScores);
                 break;
             case GameState::kPlaying:
                 ui.renderHud(renderer, session.score(), session.lives());
@@ -202,8 +258,12 @@ void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& b
                 ui.renderHud(renderer, session.score(), session.lives());
                 ui.renderPaused(renderer);
                 break;
+            case GameState::kNameEntry:
+                ui.renderNameEntry(renderer, pendingScore, nameBuffer);
+                break;
             case GameState::kGameOver:
-                ui.renderGameOver(renderer, session.score(), session.endedByBomb());
+                ui.renderGameOver(renderer, session.score(), session.endedByBomb(),
+                                  highScores, lastRank);
                 break;
         }
 
@@ -280,7 +340,11 @@ int main() {
         std::cerr << "[main] La interfaz de texto no se pudo inicializar." << std::endl;
     }
 
-    runGameLoop(window, renderer, input, background, session, ui);
+    HighScoreTable highScores;
+    highScores.load();
+    std::cout << "[HighScores] Archivo: " << highScores.path().string() << std::endl;
+
+    runGameLoop(window, renderer, input, background, session, ui, highScores);
 
     ui.cleanup();
     assets.cleanup(renderer);

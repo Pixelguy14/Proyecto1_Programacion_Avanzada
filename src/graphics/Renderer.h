@@ -1,29 +1,34 @@
 #pragma once
 
+#include "graphics/FruitMesh.h"
+#include "graphics/Mesh.h"
 #include "graphics/Texture.h"
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <string>
 #include <vector>
 
 /**
  * @file Renderer.h
- * @brief Primitivas de dibujado 2D y texturas para el juego (Sprints 1–4).
+ * @brief Primitivas 2D, texturas y mallas 3D para el juego (Sprints 1–5).
  *
  * ## Jerarquía de responsabilidades
  * El Renderer conoce OpenGL (shaders, VAO/VBO, uniforms) y expone una API
  * sencilla en coordenadas de pantalla. Las entidades solo piden "dibuja un
- * círculo aquí", "dibuja esta estela" o "dibuja este fondo"; no tocan OpenGL.
+ * círculo aquí", "dibuja esta estela", "dibuja este fondo" o "dibuja esta
+ * fruta 3D"; no tocan OpenGL.
  *
- *   Fruit::render()      → drawCircle() / drawRect()
- *   FruitHalf::render()  → drawSemicircle()
+ *   Fruit::render()      → drawMesh() (malla low-poly)
+ *   FruitHalf::render()  → drawPolygon()
  *   Blade::render()      → drawTrail()
  *   Background::render() → drawTexture()
  *   GameUi::render()     → TextRenderer + drawRect() con alpha
  *
  * La proyección ortográfica mapea (0..width, 0..height) a NDC, con Y hacia
- * arriba, de modo que las posiciones del juego se expresan en píxeles.
+ * arriba. El rango de Z es amplio para que las mallas 3D tengan profundidad;
+ * los elementos 2D se dibujan en z = 0 con el depth test desactivado.
  */
 class Renderer {
 public:
@@ -100,21 +105,6 @@ public:
                   float angleRadians, const glm::vec3& color, float alpha = 1.0f);
 
     /**
-     * @brief Dibuja un semicírculo relleno (mitad de fruta).
-     * @param center       Centro del diámetro en píxeles.
-     * @param radius       Radio en píxeles.
-     * @param angleRadians Orientación del diámetro (positiva = antihorario).
-     * @param color        Color RGB en el rango [0, 1].
-     * @param alpha        Opacidad [0, 1].
-     *
-     * La malla unitaria ocupa la mitad superior del disco (de 0 a π) con el
-     * diámetro sobre el eje X; `angleRadians` lo alinea con la dirección del
-     * corte. Para la mitad opuesta basta sumar π al ángulo.
-     */
-    void drawSemicircle(const glm::vec2& center, float radius, float angleRadians,
-                        const glm::vec3& color, float alpha = 1.0f);
-
-    /**
      * @brief Dibuja una estela como cinta (triangle strip) con grosor y alpha.
      * @param points Puntos ordenados del más antiguo al más reciente.
      * @param color  Color RGBA base en el rango [0, 1].
@@ -124,7 +114,59 @@ public:
      */
     void drawTrail(const std::vector<TrailPoint>& points, const glm::vec4& color);
 
+    /**
+     * @brief Dibuja un polígono relleno definido en coordenadas locales.
+     * @param vertices Vértices del contorno en orden (el último se une al primero).
+     * @param center   Centro del polígono en píxeles de pantalla.
+     * @param angleRadians Rotación en radianes.
+     * @param scale    Escala uniforme (normalmente el radio de la fruta).
+     * @param color    Color RGB en [0, 1].
+     * @param alpha    Opacidad [0, 1].
+     *
+     * El polígono debe ser convexo o en forma de estrella respecto a su centro;
+     * se triangula con un abanico desde el centroide. Se usa para las mitades
+     * 2D de las frutas, que tienen siluetas distintas (plátano, limón, etc.).
+     */
+    void drawPolygon(const std::vector<glm::vec2>& vertices, const glm::vec2& center,
+                     float angleRadians, float scale, const glm::vec3& color,
+                     float alpha = 1.0f);
+
+    /**
+     * @brief Activa el depth test para dibujar mallas 3D.
+     *
+     * Debe llamarse antes de las mallas y cerrarse con `end3D()` antes de
+     * volver a dibujar primitivas 2D, que no usan el buffer de profundidad.
+     */
+    void begin3D();
+
+    /// @brief Desactiva el depth test y vuelve al modo 2D.
+    void end3D();
+
+    /**
+     * @brief Dibuja una malla low-poly de fruta con luz direccional.
+     * @param id    Tipo de malla registrada en el Renderer.
+     * @param model Matriz modelo (traslación, rotación y escala).
+     *
+     * Solo debe llamarse entre `begin3D()` y `end3D()`. La normal se
+     * transforma con la inversa traspuesta del modelo y se normaliza en el
+     * shader; el color viene por vértice.
+     */
+    void drawMesh(FruitMeshId id, const glm::mat4& model);
+
 private:
+    /**
+     * @brief Compila el shader de mallas 3D (luz direccional + color).
+     * @return true si el shader program quedó listo.
+     */
+    bool buildMeshProgram();
+
+    /**
+     * @brief Sube una malla de CPU a VAO/VBO/EBO.
+     * @param data Datos de vértices e índices.
+     * @param mesh Malla de GPU de salida.
+     * @return true si los buffers se crearon correctamente.
+     */
+    bool uploadMeshData(const MeshData& data, Mesh& mesh);
     /**
      * @brief Compila el shader de primitivas sólidas (círculo/rectángulo).
      * @return true si el shader program quedó listo.
@@ -151,7 +193,7 @@ private:
     void uploadProjection(int screenWidth, int screenHeight);
 
     /**
-     * @brief Crea las mallas: círculo, semicírculo, quad, textura y estela.
+     * @brief Crea las mallas: círculo, quad, textura, estela y polígono.
      * @return true si los buffers se generaron correctamente.
      */
     bool setupGeometry();
@@ -172,15 +214,15 @@ private:
     unsigned int m_circleVBO = 0;  ///< VBO del círculo unitario.
     unsigned int m_rectVAO = 0;    ///< VAO del quad unitario (-1..1).
     unsigned int m_rectVBO = 0;    ///< VBO del quad unitario.
-    unsigned int m_semiVAO = 0;    ///< VAO del semicírculo unitario.
-    unsigned int m_semiVBO = 0;    ///< VBO del semicírculo unitario.
     unsigned int m_textureVAO = 0; ///< VAO del quad texturizado (-1..1).
     unsigned int m_textureVBO = 0; ///< VBO del quad texturizado.
     unsigned int m_circleVertexCount = 0;  ///< Vértices del abanico del círculo.
-    unsigned int m_semiVertexCount = 0;    ///< Vértices del abanico del semicírculo.
 
     unsigned int m_trailVAO = 0;   ///< VAO de la estela dinámica.
     unsigned int m_trailVBO = 0;   ///< VBO de la estela (se reescribe cada frame).
+
+    unsigned int m_polygonVAO = 0; ///< VAO del polígono dinámico 2D.
+    unsigned int m_polygonVBO = 0; ///< VBO del polígono dinámico 2D.
 
     unsigned int m_shaderProgram = 0;
     int m_projectionLocation = -1;
@@ -196,4 +238,10 @@ private:
     int m_textureModelLocation = -1;
     int m_textureAlphaLocation = -1;
     int m_textureSamplerLocation = -1;
+
+    unsigned int m_meshProgram = 0;
+    int m_meshProjectionLocation = -1;
+    int m_meshModelLocation = -1;
+    int m_meshNormalLocation = -1;
+    std::array<Mesh, kFruitMeshCount> m_meshes{};  ///< Mallas low-poly de frutas.
 };

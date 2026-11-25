@@ -17,6 +17,7 @@ bool Input::attach(GLFWwindow* window, int windowHeight) {
     glfwSetCursorPosCallback(window, &Input::cursorPositionCallback);
     glfwSetMouseButtonCallback(window, &Input::mouseButtonCallback);
     glfwSetKeyCallback(window, &Input::keyCallback);
+    glfwSetCharCallback(window, &Input::charCallback);
 
     // La estela de la espada sustituye al cursor del sistema.
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
@@ -56,6 +57,17 @@ void Input::keyCallback(GLFWwindow* window, int key, int /*scancode*/, int actio
     auto* input = static_cast<Input*>(glfwGetWindowUserPointer(window));
     if (input != nullptr) {
         input->m_keysPressed[static_cast<std::size_t>(key)] = true;
+    }
+}
+
+void Input::charCallback(GLFWwindow* window, unsigned int codepoint) {
+    if (codepoint < 32 || codepoint > 126) {
+        return;  // el atlas de texto solo cubre ASCII imprimible
+    }
+
+    auto* input = static_cast<Input*>(glfwGetWindowUserPointer(window));
+    if (input != nullptr) {
+        input->m_textInput.push_back(static_cast<char>(codepoint));
     }
 }
 

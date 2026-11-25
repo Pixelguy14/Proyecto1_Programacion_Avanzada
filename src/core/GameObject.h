@@ -49,6 +49,16 @@ public:
     virtual bool isAlive() const { return m_alive; }
 
     /**
+     * @brief Indica si el objeto se dibuja con la pasada 3D.
+     * @return true si usa mallas con depth test; false para primitivas 2D.
+     *
+     * La sesión separa las entidades en dos pasadas para que las mallas 3D
+     * escriban el buffer de profundidad y las primitivas 2D se dibujen encima
+     * sin depth test.
+     */
+    virtual bool uses3D() const { return false; }
+
+    /**
      * @brief Destructor virtual para garantizar la destrucción correcta
      *        de subclases a través de punteros a la clase base.
      */

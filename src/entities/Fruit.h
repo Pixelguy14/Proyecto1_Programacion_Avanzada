@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/GameObject.h"
+#include "graphics/FruitMesh.h"
 #include "math/Vector2D.h"
 #include "physics/Physics2D.h"
 
@@ -14,14 +15,16 @@ class Renderer;
 
 /**
  * @file Fruit.h
- * @brief Fruta con física parabólica, rotación y estados por banderas (Sprints 1–3).
+ * @brief Fruta con física parabólica, rotación y estados por banderas (Sprints 1–5).
  *
- * `Fruit` solo contiene estado y comportamiento de una fruta; no conoce la
- * ventana ni OpenGL.
+ * `Fruit` contiene estado y comportamiento de una fruta; no conoce la ventana
+ * ni OpenGL. El cuerpo se dibuja como una malla 3D low-poly que gira con la
+ * fruta, mientras la física y la colisión siguen siendo 2D.
  *
  *   GameObject (abstracta)
  *     └── Fruit
  *           ├── PhysicsBody   (posición, velocidad, aceleración)
+ *           ├── m_meshId      (malla low-poly: melón, manzana, …)
  *           ├── m_flags       (registro de banderas de estado)
  *           └── m_angle       (rotación visual)
  *
@@ -61,14 +64,15 @@ public:
      * @brief Crea una fruta con estado inicial ya definido por el Spawner.
      * @param position        Posición inicial en píxeles de pantalla.
      * @param velocity        Velocidad inicial en píxeles/segundo.
-     * @param radius          Radio en píxeles.
+     * @param radius          Radio en píxeles (también escala la malla).
      * @param angularVelocity Velocidad angular en radianes/segundo.
-     * @param color           Color RGB en el rango [0, 1].
+     * @param meshId          Tipo de fruta y malla low-poly a dibujar.
      *
-     * La fruta nace con la bandera `kActive`; el Spawner puede añadir `kBomb`.
+     * La fruta nace con la bandera `kActive`. Si `meshId` es
+     * `FruitMeshId::kBomb`, también se activa `kBomb` automáticamente.
      */
     Fruit(const Vector2D<float>& position, const Vector2D<float>& velocity, float radius,
-          float angularVelocity, const glm::vec3& color);
+          float angularVelocity, FruitMeshId meshId);
 
     /**
      * @brief Aplica gravedad, integra la posición y actualiza la rotación.
@@ -80,10 +84,15 @@ public:
     void update(float dt) override;
 
     /**
-     * @brief Dibuja el cuerpo circular y el tallo rotado.
+     * @brief Dibuja la malla 3D low-poly con la rotación actual.
      * @param renderer Renderer compartido.
+     *
+     * Debe ejecutarse entre `Renderer::begin3D()` y `end3D()`.
      */
     void render(Renderer& renderer) override;
+
+    /// @return true: la fruta se dibuja en la pasada 3D con depth test.
+    bool uses3D() const override { return true; }
 
     /**
      * @brief Indica si la fruta sigue activa según su registro de banderas.
@@ -101,8 +110,14 @@ public:
     /// @return Posición actual en píxeles.
     const Vector2D<float>& position() const { return m_body.position; }
 
-    /// @return Color del cuerpo (en una bomba, el color guardado de la fruta).
+    /// @return Tipo de malla low-poly de la fruta.
+    FruitMeshId meshId() const { return m_meshId; }
+
+    /// @return Color de la cáscara (usado por las mitades).
     const glm::vec3& color() const { return m_color; }
+
+    /// @return Color de la pulpa (usado por el jugo y las mitades).
+    const glm::vec3& fleshColor() const { return m_fleshColor; }
 
     /// @return true si la fruta es una bomba.
     bool isBomb() const { return hasFlag(FruitFlag::kBomb); }
@@ -149,7 +164,7 @@ public:
      * @param cutDirection Dirección del segmento de espada que produjo el corte.
      * @return Par de mitades, o `{nullptr, nullptr}` si la fruta no era cortable.
      *
-     * El diámetro de cada semicírculo se alinea con `cutDirection`; las
+     * El borde plano de cada mitad se alinea con `cutDirection`; las
      * velocidades se separan a lo largo de la perpendicular, simulando la
      * fuerza del tajo. La segunda mitad gira 180° respecto a la primera.
      */
@@ -166,26 +181,13 @@ private:
      */
     bool hasFallenOffScreen() const;
 
-    /**
-     * @brief Dibuja una bomba: cuerpo oscuro, borde rojo, brillo, mecha y chispa.
-     * @param renderer Renderer compartido.
-     *
-     * Se reutiliza la rotación de la fruta para orientar la mecha, de modo que
-     * la bomba también gira durante el vuelo.
-     */
-    void renderBomb(Renderer& renderer);
-
-    /**
-     * @brief Calcula el desplazamiento del tallo según el ángulo actual.
-     * @return Offset desde el centro de la fruta hasta el centro del tallo.
-     */
-    Vector2D<float> stemOffset() const;
-
 private:
     PhysicsBody m_body;              ///< Estado cinemático (posición/velocidad).
     float m_radius;                  ///< Radio en píxeles.
     float m_angle = 0.0f;            ///< Rotación actual en radianes.
     float m_angularVelocity;         ///< Rotación en radianes/segundo.
-    glm::vec3 m_color;               ///< Color del cuerpo.
+    FruitMeshId m_meshId;            ///< Malla low-poly asociada.
+    glm::vec3 m_color;               ///< Color de la cáscara.
+    glm::vec3 m_fleshColor;          ///< Color de la pulpa.
     unsigned int m_flags = FruitFlag::kActive;  ///< Registro de estado por bits.
 };

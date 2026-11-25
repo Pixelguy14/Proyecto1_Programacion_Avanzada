@@ -2,20 +2,22 @@
 
 #include "graphics/TextRenderer.h"
 
+class HighScoreTable;
 class Renderer;
 
 /**
  * @file GameUi.h
- * @brief Textos y overlays de los cuatro estados de juego (Sprint 4).
+ * @brief Textos, overlays y récords de los estados de juego (Sprints 4–5).
  *
- * GameUi no conoce la lógica de la partida: recibe el puntaje y las vidas como
- * parámetros y solo decide qué texto dibujar. Los overlays son rectángulos
- * semitransparentes que oscurecen el fondo para que el texto se lea.
+ * GameUi no conoce la lógica de la partida: recibe el puntaje, las vidas y la
+ * tabla de récords, y solo decide qué texto dibujar. Los overlays son
+ * rectángulos semitransparentes que oscurecen el fondo para que el texto se lea.
  *
  *   main (estado)
  *     └── GameUi
- *           ├── TextRenderer  (Zen Antique)
- *           └── Renderer      (overlays con alpha)
+ *           ├── TextRenderer     (Zen Antique)
+ *           ├── Renderer         (overlays con alpha)
+ *           └── HighScoreTable   (top 10 en menú y game over)
  */
 class GameUi {
 public:
@@ -47,10 +49,11 @@ public:
     void renderHud(Renderer& renderer, int score, int lives) const;
 
     /**
-     * @brief Dibuja el título y las instrucciones del menú.
-     * @param renderer Renderer compartido.
+     * @brief Dibuja el título, las instrucciones y el top 10 del menú.
+     * @param renderer   Renderer compartido.
+     * @param highScores Tabla de récords a mostrar en la esquina superior derecha.
      */
-    void renderMenu(Renderer& renderer) const;
+    void renderMenu(Renderer& renderer, const HighScoreTable& highScores) const;
 
     /**
      * @brief Dibuja el overlay de pausa.
@@ -59,12 +62,23 @@ public:
     void renderPaused(Renderer& renderer) const;
 
     /**
-     * @brief Dibuja el resultado final de la partida.
+     * @brief Dibuja la entrada de nombre para un nuevo récord.
+     * @param renderer Renderer compartido.
+     * @param score    Puntaje conseguido.
+     * @param name     Nombre tecleado hasta ahora (puede estar vacío).
+     */
+    void renderNameEntry(Renderer& renderer, int score, const std::string& name) const;
+
+    /**
+     * @brief Dibuja el resultado final y el top 10.
      * @param renderer      Renderer compartido.
      * @param score         Puntaje con el que terminó la partida.
      * @param bombExploded  true si el jugador cortó una bomba.
+     * @param highScores    Tabla de récords.
+     * @param highlightRank Fila a resaltar (0–9), o -1 si no hay ninguna.
      */
-    void renderGameOver(Renderer& renderer, int score, bool bombExploded) const;
+    void renderGameOver(Renderer& renderer, int score, bool bombExploded,
+                        const HighScoreTable& highScores, int highlightRank = -1) const;
 
 private:
     /**
@@ -86,6 +100,20 @@ private:
      */
     void drawCenteredWithShadow(const std::string& text, const glm::vec2& center, float scale,
                                 const glm::vec4& color) const;
+
+    /**
+     * @brief Dibuja el top 10 con las columnas de nombre y puntaje alineadas.
+     * @param highScores    Tabla de récords.
+     * @param anchorX       Borde derecho (si `rightAligned`) o centro del bloque.
+     * @param topY          Y del primer renglón.
+     * @param scale         Escala del texto.
+     * @param lineHeight    Separación vertical entre renglones.
+     * @param highlightRank Fila resaltada (0–9), o -1.
+     * @param rightAligned  true para alinear a la derecha (menú).
+     */
+    void renderScoreTable(const HighScoreTable& highScores, float anchorX, float topY,
+                          float scale, float lineHeight, int highlightRank,
+                          bool rightAligned) const;
 
 private:
     TextRenderer m_text;        ///< Atlas y shader de la tipografía.

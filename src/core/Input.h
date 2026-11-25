@@ -25,6 +25,7 @@
 #include "math/Vector2D.h"
 
 #include <array>
+#include <string>
 
 class Input {
 public:
@@ -55,12 +56,25 @@ public:
     bool isMouseDown() const { return m_mouseDown; }
 
     /**
-     * @brief Limpia las teclas pulsadas en el frame anterior.
+     * @brief Limpia las teclas y el texto pulsados en el frame anterior.
      *
      * Debe llamarse antes de `Window::pollEvents()`: los callbacks de teclado
      * del frame actual vuelven a llenar el registro de pulsaciones.
      */
-    void beginFrame() { m_keysPressed.fill(false); }
+    void beginFrame() {
+        m_keysPressed.fill(false);
+        m_textInput.clear();
+    }
+
+    /**
+     * @brief Texto introducido en el frame actual.
+     * @return Caracteres ASCII imprimibles recibidos por el callback de GLFW.
+     *
+     * Se usa en la pantalla de récords para teclear el nombre. GLFW ya aplica
+     * la distribución del teclado y Shift; aquí solo se filtran los caracteres
+     * que el atlas de texto puede dibujar.
+     */
+    const std::string& textInput() const { return m_textInput; }
 
     /**
      * @brief Comprueba si una tecla se pulsó en el frame actual.
@@ -101,6 +115,15 @@ private:
     static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
     /**
+     * @brief Callback de GLFW: guarda los caracteres ASCII imprimibles.
+     * @param window    Ventana que emitió el evento.
+     * @param codepoint Punto de código Unicode introducido.
+     *
+     * El atlas de texto solo cubre ASCII 32–126; el resto se ignora.
+     */
+    static void charCallback(GLFWwindow* window, unsigned int codepoint);
+
+    /**
      * @brief Guarda la posición convirtiendo el eje Y al espacio del juego.
      * @param x Coordenada X en píxeles de ventana.
      * @param y Coordenada Y en píxeles de ventana (origen arriba).
@@ -112,4 +135,5 @@ private:
     int m_windowHeight = 0;             ///< Altura lógica para invertir el eje Y.
     bool m_mouseDown = false;           ///< Estado del botón izquierdo.
     std::array<bool, GLFW_KEY_LAST + 1> m_keysPressed{};  ///< Pulsaciones del frame.
+    std::string m_textInput;            ///< Caracteres ASCII del frame.
 };
