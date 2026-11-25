@@ -1,5 +1,6 @@
 #include "Spawner.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -32,6 +33,13 @@ constexpr float kMaxAngularSpeed = 3.0f;
 /// Bombas: lanzamientos de gracia antes de la primera y probabilidad después.
 constexpr int kBombGraceSpawns = 4;
 constexpr float kBombChance = 0.16f;
+constexpr float kBombChanceLate = 0.28f;
+
+/// Dificultad progresiva (Sprint 5): el juego se endurece con los lanzamientos.
+constexpr int kDifficultyRampSpawns = 30;
+constexpr float kMinSpawnIntervalLate = 0.32f;
+constexpr float kMaxSpawnIntervalLate = 0.80f;
+constexpr float kMaxHorizontalSpeedFactorLate = 0.14f;
 
 /// Las bombas son un poco más grandes para que se distingan a simple vista.
 constexpr float kBombRadiusBonus = 1.08f;
@@ -78,7 +86,13 @@ std::unique_ptr<Fruit> Spawner::trySpawn(float dt) {
         return nullptr;
     }
 
-    m_timeUntilSpawn = randomFloat(kMinSpawnInterval, kMaxSpawnInterval);
+    // La dificultad recorta el intervalo y aumenta la velocidad horizontal.
+    const float level = difficulty();
+    const float minInterval = kMinSpawnInterval
+        + (kMinSpawnIntervalLate - kMinSpawnInterval) * level;
+    const float maxInterval = kMaxSpawnInterval
+        + (kMaxSpawnIntervalLate - kMaxSpawnInterval) * level;
+    m_timeUntilSpawn = randomFloat(minInterval, maxInterval);
     return spawnFruit();
 }
 
@@ -100,9 +114,11 @@ std::unique_ptr<Fruit> Spawner::spawnFruit() {
 
     const float apex = randomFloat(m_screenHeight * kMinApexFactor,
                                    m_screenHeight * kMaxApexFactor);
+    const float maxHorizontalSpeed = kMaxHorizontalSpeedFactor
+        + (kMaxHorizontalSpeedFactorLate - kMaxHorizontalSpeedFactor) * difficulty();
     const Vector2D<float> velocity{
-        randomFloat(-m_screenWidth * kMaxHorizontalSpeedFactor,
-                     m_screenWidth * kMaxHorizontalSpeedFactor),
+        randomFloat(-m_screenWidth * maxHorizontalSpeed,
+                     m_screenWidth * maxHorizontalSpeed),
         launchSpeedForApex(apex),
     };
 
@@ -120,7 +136,14 @@ bool Spawner::shouldSpawnBomb() {
     if (m_spawned < kBombGraceSpawns) {
         return false;
     }
-    return randomFloat(0.0f, 1.0f) < kBombChance;
+    const float chance = kBombChance + (kBombChanceLate - kBombChance) * difficulty();
+    return randomFloat(0.0f, 1.0f) < chance;
+}
+
+float Spawner::difficulty() const {
+    const float progress = static_cast<float>(m_spawned)
+        / static_cast<float>(kDifficultyRampSpawns);
+    return std::min(1.0f, progress);
 }
 
 float Spawner::randomFloat(float min, float max) {

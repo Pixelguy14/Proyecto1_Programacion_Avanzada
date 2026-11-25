@@ -1,5 +1,6 @@
 #include "Background.h"
 
+#include "core/AssetManager.h"
 #include "core/AssetPaths.h"
 #include "graphics/Renderer.h"
 
@@ -10,7 +11,7 @@
 
 /**
  * @file Background.cpp
- * @brief Carga de fondos y fundido cruzado entre escenarios.
+ * @brief Carga de fondos mediante AssetManager y fundido cruzado.
  */
 
 namespace {
@@ -18,12 +19,25 @@ namespace {
 /// Duración del crossfade, en segundos.
 constexpr float kFadeDuration = 0.8f;
 
-/// Nombres de archivo en el mismo orden que `BackgroundScene`.
-constexpr const char* kSceneFiles[] = {
-    "dojo_outside.png",
-    "dojo_inside.png",
-    "dojo_room.png",
-    "dojo_nursery.png",
+/**
+ * @brief Clave e archivo de cada escenario.
+ *
+ * El orden coincide con `BackgroundScene`, pero los nombres de archivo no
+ * siguen el nombre del enum: `kRoom` (partida) usa `dojo_inside.png`, que
+ * muestra el salón del dojo, y `kInside` (pausa) usa `dojo_room.png`, que
+ * muestra la recámara/biblioteca. Es intencional: `dojo_inside` es el dojo
+ * y `dojo_room` es una recámara. No invertir sin cambiar también los estados.
+ */
+struct SceneAsset {
+    const char* key;   ///< Identificador en el AssetManager.
+    const char* file;  ///< Archivo dentro de `src/graphics/assets/`.
+};
+
+constexpr SceneAsset kSceneAssets[] = {
+    {"bg_outside", "dojo_outside.png"},  // kOutside: exterior del dojo
+    {"bg_inside", "dojo_inside.png"},    // kRoom: salón del dojo (partida)
+    {"bg_room", "dojo_room.png"},        // kInside: recámara (pausa)
+    {"bg_nursery", "dojo_nursery.png"},  // kNursery: guardería
 };
 
 /**
@@ -37,27 +51,22 @@ std::size_t sceneIndex(BackgroundScene scene) {
 
 }  // namespace
 
-bool Background::init(Renderer& renderer, float width, float height) {
+bool Background::init(AssetManager& assets, Renderer& renderer, float width, float height) {
+    m_assets = &assets;
     m_width = width;
     m_height = height;
 
     bool allLoaded = true;
-    for (std::size_t i = 0; i < m_textures.size(); ++i) {
-        const std::string path = AssetPaths::resolve(kSceneFiles[i]);
-        m_textures[i] = renderer.loadTexture(path);
-        if (!m_textures[i].valid()) {
+    for (std::size_t i = 0; i < m_keys.size(); ++i) {
+        m_keys[i] = kSceneAssets[i].key;
+        const std::string path = AssetPaths::resolve(kSceneAssets[i].file);
+        if (!assets.loadTexture(renderer, m_keys[i], path)) {
             std::cerr << "[Background] Falto cargar el fondo: " << path << std::endl;
             allLoaded = false;
         }
     }
 
     return allLoaded;
-}
-
-void Background::cleanup(Renderer& renderer) {
-    for (Texture& texture : m_textures) {
-        renderer.destroyTexture(texture);
-    }
 }
 
 void Background::setScene(BackgroundScene scene, bool immediate) {
@@ -91,14 +100,22 @@ void Background::update(float dt) {
 }
 
 void Background::render(Renderer& renderer) {
+    if (m_assets == nullptr) {
+        return;
+    }
+
     const glm::vec2 center{m_width * 0.5f, m_height * 0.5f};
     const glm::vec2 size{m_width, m_height};
 
     if (m_hasPrevious) {
-        const Texture& previous = m_textures[sceneIndex(m_previous)];
-        renderer.drawTexture(previous, center, size, 1.0f);
+        const Texture* previous = m_assets->texture(m_keys[sceneIndex(m_previous)]);
+        if (previous != nullptr) {
+            renderer.drawTexture(*previous, center, size, 1.0f);
+        }
     }
 
-    const Texture& current = m_textures[sceneIndex(m_current)];
-    renderer.drawTexture(current, center, size, m_hasPrevious ? m_fade : 1.0f);
+    const Texture* current = m_assets->texture(m_keys[sceneIndex(m_current)]);
+    if (current != nullptr) {
+        renderer.drawTexture(*current, center, size, m_hasPrevious ? m_fade : 1.0f);
+    }
 }

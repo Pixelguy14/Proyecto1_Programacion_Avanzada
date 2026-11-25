@@ -3,10 +3,10 @@
 Clon de **Fruit Ninja** en C++17 con OpenGL 3.3 core, basado en *The Nature of Code*
 (cap. 2.6) y el trackeo del mouse.
 
-Estado actual: **Sprint 4 terminado** — máquina de estados, cuatro fondos con
-crossfade, tipografía FreeType (Zen Antique), HUD de puntos/vidas, pantallas de menú,
-pausa y game over, partículas de jugo, bombas y detección de colisiones con AVX
-(con respaldo escalar). Ver [`process.md`](process.md) para el detalle.
+Estado actual: **Sprint 5 (Fase A) terminado** — `AssetManager` con tabla hash de la
+STL, screen shake, dificultad progresiva y mapeo intencional de fondos documentado.
+Faltan el audio (Fase B) y las frutas 3D low-poly (Fase C). Ver
+[`process.md`](process.md) para el detalle.
 
 ---
 
@@ -209,10 +209,17 @@ y mecha encendida. Cortar una termina la partida de inmediato con una explosión
 chispas; dejarla caer no penaliza. Al arrancar, la consola indica si las colisiones
 usan la ruta `AVX` o la `escalar`.
 
+La escena hace un **screen shake** corto al cortar frutas y uno más fuerte al explotar
+una bomba; el HUD se mantiene fijo. La **dificultad sube** con los lanzamientos: las
+frutas salen más seguidas, con más velocidad horizontal y con más probabilidad de
+bomba. El radio de corte tiene un margen extra del 15 % para que el tajo sea más
+indulgente.
+
 **Recursos incluidos:** los cuatro PNG de `src/graphics/assets/` y la tipografía
 `fonts/ZenAntique-Regular.ttf` (SIL Open Font License 1.1, ver
-`src/graphics/assets/fonts/OFL.txt`). `AssetPaths` los encuentra aunque el ejecutable
-se lance desde `build/` o `build/bin/`.
+`src/graphics/assets/fonts/OFL.txt`). Las texturas se registran en un `AssetManager`
+(`std::unordered_map`) y se consultan por identificador (`bg_outside`, `bg_room`, …).
+`AssetPaths` los encuentra aunque el ejecutable se lance desde `build/` o `build/bin/`.
 
 ---
 

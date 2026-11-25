@@ -1,3 +1,4 @@
+#include "core/AssetManager.h"
 #include "core/Input.h"
 #include "core/Window.h"
 #include "game/GameSession.h"
@@ -6,6 +7,8 @@
 #include "graphics/Background.h"
 #include "graphics/Renderer.h"
 #include "math/Collision.h"
+
+#include <glm/glm.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -183,8 +186,14 @@ void runGameLoop(Window& window, Renderer& renderer, Input& input, Background& b
         background.render(renderer);
 
         // En pausa y game over se congela la escena, pero se sigue dibujando.
+        // El screen shake solo se aplica a la escena jugable; el HUD queda fijo.
         if (state != GameState::kMenu) {
+            const bool shakeActive = state == GameState::kPlaying
+                || state == GameState::kGameOver;
+            renderer.setViewOffset(shakeActive ? session.screenShakeOffset()
+                                               : glm::vec2{0.0f});
             session.render(renderer);
+            renderer.setViewOffset(glm::vec2{0.0f});
         }
 
         switch (state) {
@@ -235,11 +244,14 @@ int main() {
         return 1;
     }
 
+    AssetManager assets;
+
     Background background;
-    if (!background.init(renderer, static_cast<float>(window.width()),
+    if (!background.init(assets, renderer, static_cast<float>(window.width()),
                          static_cast<float>(window.height()))) {
         std::cerr << "[main] Algunos fondos no se pudieron cargar." << std::endl;
     }
+    std::cout << "[main] Recursos: " << assets.textureCount() << " texturas." << std::endl;
 
     GameSession session(input, static_cast<float>(window.width()),
                         static_cast<float>(window.height()));
@@ -255,7 +267,7 @@ int main() {
     runGameLoop(window, renderer, input, background, session, ui);
 
     ui.cleanup();
-    background.cleanup(renderer);
+    assets.cleanup(renderer);
     renderer.cleanup();
     window.terminate();
     return 0;

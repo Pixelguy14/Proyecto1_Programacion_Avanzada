@@ -62,6 +62,15 @@ private:
     bool shouldSpawnBomb();
 
     /**
+     * @brief Nivel de dificultad normalizado.
+     * @return 0 al inicio y 1 tras `kDifficultyRampSpawns` lanzamientos.
+     *
+     * Con la dificultad suben la frecuencia de lanzamiento, la velocidad
+     * horizontal y la probabilidad de bomba.
+     */
+    float difficulty() const;
+
+    /**
      * @brief Genera un número real uniforme en [min, max].
      * @param min Límite inferior.
      * @param max Límite superior.

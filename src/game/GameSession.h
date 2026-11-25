@@ -4,6 +4,7 @@
 #include "entities/Blade.h"
 #include "entities/Particle.h"
 #include "entities/Spawner.h"
+#include "graphics/ScreenShake.h"
 
 #include <memory>
 #include <random>
@@ -38,6 +39,11 @@ class Renderer;
  *
  * Las partículas no participan en las reglas: no suman puntos, no restan vidas
  * y se eliminan solas al agotar su vida.
+ *
+ * ## Screen shake (Sprint 5)
+ * La sesión también acumula pequeños impulsos de cámara al cortar frutas y uno
+ * grande al explotar una bomba. `screenShakeOffset()` devuelve el
+ * desplazamiento que el bucle aplica al Renderer mientras dibuja la escena.
  */
 class GameSession {
 public:
@@ -96,6 +102,9 @@ public:
 
     /// @return true si la partida terminó porque el jugador cortó una bomba.
     bool endedByBomb() const { return m_bombExploded; }
+
+    /// @return Desplazamiento actual del screen shake en píxeles.
+    const glm::vec2& screenShakeOffset() const { return m_shake.offset(); }
 
 private:
     /// Contenedor polimórfico de entidades; posee los objetos con unique_ptr.
@@ -181,6 +190,7 @@ private:
     float m_height;              ///< Alto lógico de la pantalla.
     Spawner m_spawner;           ///< Generador de frutas y bombas.
     Blade m_blade;               ///< Espada ligada a la entrada.
+    ScreenShake m_shake;         ///< Impulsos de cámara (Sprint 5).
     GameObjectList m_objects;    ///< Frutas y mitades activas.
     ParticleList m_particles;    ///< Jugo y chispas (solo visuales).
     std::mt19937 m_rng;          ///< Generador para la variación de partículas.

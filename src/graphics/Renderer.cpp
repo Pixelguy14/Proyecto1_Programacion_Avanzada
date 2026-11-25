@@ -355,6 +355,9 @@ bool Renderer::init(int screenWidth, int screenHeight) {
         return false;
     }
 
+    m_screenWidth = screenWidth;
+    m_screenHeight = screenHeight;
+    m_viewOffset = glm::vec2{0.0f};
     uploadProjection(screenWidth, screenHeight);
 
     // La estela necesita blending para desvanecerse; las figuras opacas no cambian.
@@ -402,10 +405,13 @@ bool Renderer::buildTextureProgram() {
 
 void Renderer::uploadProjection(int screenWidth, int screenHeight) {
     // Mapea el espacio de pantalla (0,width) x (0,height) a NDC, con Y hacia arriba.
-    const glm::mat4 projection = glm::ortho(
-        0.0f, static_cast<float>(screenWidth),
-        0.0f, static_cast<float>(screenHeight),
-        -1.0f, 1.0f);
+    // El desplazamiento de cámara se aplica como una traslación en píxeles para
+    // que el screen shake no obligue a tocar las posiciones del juego.
+    const glm::mat4 projection = glm::translate(glm::mat4(1.0f),
+                                                glm::vec3(m_viewOffset, 0.0f))
+        * glm::ortho(0.0f, static_cast<float>(screenWidth),
+                     0.0f, static_cast<float>(screenHeight),
+                     -1.0f, 1.0f);
 
     glUseProgram(m_shaderProgram);
     glUniformMatrix4fv(m_projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
@@ -415,6 +421,14 @@ void Renderer::uploadProjection(int screenWidth, int screenHeight) {
 
     glUseProgram(m_textureProgram);
     glUniformMatrix4fv(m_textureProjectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
+}
+
+void Renderer::setViewOffset(const glm::vec2& offset) {
+    if (offset == m_viewOffset) {
+        return;
+    }
+    m_viewOffset = offset;
+    uploadProjection(m_screenWidth, m_screenHeight);
 }
 
 bool Renderer::setupGeometry() {

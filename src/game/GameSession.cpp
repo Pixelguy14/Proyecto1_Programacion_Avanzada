@@ -22,6 +22,14 @@ constexpr int kStartingLives = 3;
 /// Presupuesto máximo de partículas simultáneas (jugo + chispas).
 constexpr std::size_t kMaxParticles = 500;
 
+/// Margen extra del radio de corte para que el tajo sea más indulgente.
+constexpr float kCutRadiusFactor = 1.15f;
+
+/// Amplitudes del screen shake, en píxeles.
+constexpr float kSliceShake = 3.5f;
+constexpr float kBombShake = 24.0f;
+constexpr float kMissedShakePerFruit = 5.0f;
+
 /// Ráfaga de jugo al cortar una fruta.
 constexpr int kJuiceParticles = 14;
 constexpr float kJuiceSpeedMin = 90.0f;
@@ -71,6 +79,7 @@ void GameSession::reset() {
     m_lives = kStartingLives;
     m_gameOver = false;
     m_bombExploded = false;
+    m_shake.reset();
     m_blade.clearTrail();
     m_spawner = Spawner(m_width, m_height);
 }
@@ -92,10 +101,15 @@ void GameSession::update(float dt) {
     updateParticles(dt);
     sliceFruits();
 
-    m_lives -= countMissedFruits();
+    const int missed = countMissedFruits();
+    if (missed > 0) {
+        m_lives -= missed;
+        m_shake.trigger(kMissedShakePerFruit * static_cast<float>(missed));
+    }
     m_lives = std::max(m_lives, 0);
 
     removeDeadObjects();
+    m_shake.update(dt);
 
     if (m_lives == 0) {
         m_gameOver = true;
@@ -104,6 +118,7 @@ void GameSession::update(float dt) {
 
 void GameSession::updateEffects(float dt) {
     updateParticles(dt);
+    m_shake.update(dt);
 }
 
 int GameSession::sliceFruits() {
@@ -116,7 +131,8 @@ int GameSession::sliceFruits() {
             continue;
         }
 
-        const Blade::CutResult cut = m_blade.cutAt(fruit->position(), fruit->radius());
+        const Blade::CutResult cut = m_blade.cutAt(fruit->position(),
+                                                   fruit->radius() * kCutRadiusFactor);
         if (!cut.hit) {
             continue;
         }
@@ -125,6 +141,7 @@ int GameSession::sliceFruits() {
             // Cortar una bomba termina la partida: no genera mitades ni puntos.
             fruit->markSliced();
             emitExplosion(fruit->position(), fruit->radius());
+            m_shake.trigger(kBombShake);
             m_bombExploded = true;
             m_lives = 0;
             continue;
@@ -139,6 +156,7 @@ int GameSession::sliceFruits() {
         }
 
         emitJuice(fruit->position(), fruit->color(), fruit->radius());
+        m_shake.trigger(kSliceShake);
         ++sliced;
         ++m_score;
     }

@@ -331,8 +331,8 @@ bombas y detección de colisiones acelerada con AVX.
   - `textWidth()`, `lineHeight()` y `ascent()` para centrar y alinear.
 - `src/graphics/Background.h/.cpp`
   - Enum `BackgroundScene { kOutside, kRoom, kInside, kNursery }`.
-  - Carga `dojo_outside.png`, `dojo_room.png`, `dojo_inside.png` y
-    `dojo_nursery.png`.
+  - Carga `dojo_outside.png` (menú), `dojo_inside.png` (partida),
+    `dojo_room.png` (pausa) y `dojo_nursery.png` (game over).
   - Crossfade de 0.8 s: el fondo anterior se dibuja opaco y el nuevo encima con
     alpha 0→1. `setScene(scene, immediate)` permite saltar el fundido al arrancar.
 - `src/graphics/Texture.h` y `src/graphics/Renderer.h/.cpp`
@@ -476,8 +476,72 @@ bombas y detección de colisiones acelerada con AVX.
 - Dificultad progresiva (más bombas y menos intervalo con el puntaje).
 - Pulido de animaciones y efectos finales.
 
-## Sprint 5 – Polish & Sound
-> (To be filled after completion)
+## Sprint 5 – Polish, Resources & Juice
+**Goal:** Cerrar el juego con gestión de recursos, screen shake, dificultad progresiva,
+audio y frutas 3D low-poly.
+
+> **Fase A terminada:** AssetManager con STL, screen shake y ajuste de dificultad.
+> Las fases B (audio) y C (frutas 3D) quedan pendientes.
+
+### Tasks
+1. Registrar texturas en un `AssetManager` con `std::unordered_map`.
+2. Aplicar screen shake al cortar frutas y al explotar bombas.
+3. Ajustar el radio de corte y la curva de dificultad.
+4. Documentar el mapeo intencional de fondos (`kRoom` → dojo, `kInside` → recámara).
+
+### Implementación – Fase A
+- `src/core/AssetManager.h/.cpp`
+  - `std::unordered_map<std::string, Texture>` como tabla hash de recursos.
+  - `loadTexture()` no recarga identificadores existentes y no guarda fallos.
+  - `texture()` devuelve `const Texture*`; `cleanup()` libera todo con el Renderer.
+- `src/graphics/Background.h/.cpp`
+  - Ya no posee texturas: guarda claves (`bg_room`, `bg_inside`, …) y consulta el
+    manager en cada dibujado.
+  - `init(AssetManager&, Renderer&, width, height)`.
+  - **Mapeo intencional:** `kRoom` (partida) usa `dojo_inside.png`, el salón del
+    dojo, y `kInside` (pausa) usa `dojo_room.png`, la recámara. Se documenta para
+    que no se confunda con un cruce accidental.
+- `src/graphics/ScreenShake.h/.cpp`
+  - Impulsos acumulables con tope de 32 px y decaimiento lineal de 70 px/s.
+  - Jitter aleatorio por frame y `reset()` para reinicios.
+- `src/graphics/Renderer.h/.cpp`
+  - `setViewOffset()` reconstruye la proyección con una traslación en píxeles; el HUD
+    se dibuja con offset cero.
+- `src/game/GameSession.h/.cpp`
+  - `ScreenShake m_shake`: 3.5 px por fruta cortada, 24 px por bomba y 5 px por fruta
+    perdida.
+  - `screenShakeOffset()` lo consume el bucle principal.
+  - `kCutRadiusFactor = 1.15f` hace el tajo un poco más indulgente.
+  - `updateEffects()` también decae el shake en GameOver.
+- `src/entities/Spawner.h/.cpp`
+  - `difficulty()` va de 0 a 1 en 30 lanzamientos.
+  - El intervalo baja de 0.55–1.15 s a 0.32–0.80 s.
+  - La velocidad horizontal sube de 10 % a 14 % del ancho.
+  - La probabilidad de bomba sube de 16 % a 28 %.
+- `src/main.cpp`
+  - `AssetManager assets;` compartido con `Background`.
+  - Aplica `setViewOffset()` solo en Playing/GameOver y lo vuelve a cero antes de la UI.
+  - Registra en consola el número de texturas y la ruta de colisiones.
+
+### Checklist – Fase A
+- [x] AssetManager con tabla hash de la STL.
+- [x] Background usa identificadores y ya no posee texturas.
+- [x] Screen shake en cortes, bombas y frutas perdidas.
+- [x] Radio de corte más indulgente.
+- [x] Dificultad progresiva (frecuencia, velocidad y bombas).
+- [x] Mapeo intencional `kRoom` → dojo e `kInside` → recámara documentado.
+- [x] Compila sin advertencias (`-Wall -Wextra -Wpedantic`).
+
+### Verificación – Fase A
+- Compilación limpia con `-Wall -Wextra -Wpedantic`.
+- Ejecución real: `[main] Recursos: 4 texturas.` y `[main] Colisiones: AVX`.
+- Capturas offscreen de los cuatro fondos: `room` muestra el salón del dojo e
+  `inside` la recámara, confirmando el mapeo intencional.
+- Pendiente: revisar el feel del shake en una sesión jugada.
+
+### Pendiente – Fases B y C
+- **Fase B:** audio con miniaudio y efectos de corte, bomba y game over.
+- **Fase C:** frutas 3D low-poly con mallas procedurales, luz y color por vértice.
 
 ---
 
